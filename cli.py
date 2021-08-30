@@ -71,6 +71,8 @@ def copy_media_files(args, files_by_date, clustering) -> None:
     """Copy media files to a new directory, grouped by cluster"""
 
     media_id = 0
+    total_file_count = len(files_by_date)
+
     for data, id in zip(files_by_date, clustering.labels_):
         _, file_extension = os.path.splitext(data['fpath'])
         file_extension = file_extension.lower()
@@ -82,7 +84,8 @@ def copy_media_files(args, files_by_date, clustering) -> None:
             # -- a noise point, outside of a cluster. Just copy this to the destination folder directly
             to = os.path.join(args['--to'], new_filename)
 
-            logging.info(f'copying {data["fpath"]} to {to}')
+            logging.info(
+                f'copying {str(media_id)} / {str(total_file_count)} {data["fpath"]} to {to}')
 
             shutil.copy(data['fpath'], to)
         else:
@@ -97,7 +100,9 @@ def copy_media_files(args, files_by_date, clustering) -> None:
                 raise
 
             to = os.path.join(tgt_dir, new_filename)
-            logging.info(f'copying {data["fpath"]} to {to}')
+            logging.info(
+                f'copying {str(media_id)} / {str(total_file_count)} {data["fpath"]} to {to}')
+
 
             shutil.copy(data['fpath'], to)
 
