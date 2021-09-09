@@ -3,7 +3,7 @@
 """Usage:
     badger copy --from <srcdir> --to <destdir> [-s <num>|--max-seconds-diff <num>] [-b <threshold>|--blur-threshhold <threshold>]
     badger flatten --from <srcdir> --to <destdir>
-    badger [-h|--help]
+    badger (-h|--help)
 
 Description:
     badger is a tool that helps you filter large folders of photos. It:
@@ -31,6 +31,12 @@ Options:
     -h, --help                                       show this documentation.
 """
 
+import functools
+
+import multiprocessing
+import badger
+
+import lz4.frame
 import os
 import shutil
 import glob
@@ -43,9 +49,12 @@ from sklearn.cluster import DBSCAN
 import pathlib
 from datetime import datetime
 from PIL import Image, ExifTags
+from alive_progress import alive_bar
+
+from multiprocessing.pool import Pool
 
 import logging
-logging.basicConfig(level=logging.INFO, format='📷 %(message)s')
+logging.basicConfig(level=logging.INFO, format='🦡 %(message)s')
 
 CLUSTER_SIZE = 2
 SUPPORTED_BLUR_EXTENSIONS = ['png', 'jpg', 'jpeg']
@@ -93,52 +102,102 @@ def yes_or_no(question: str) -> bool:
     return False
 
 
+class CTError(Exception):
+    def __init__(self, errors):
+        self.errors = errors
+
+
+try:
+    O_BINARY = os.O_BINARY
+except:
+    O_BINARY = 0
+READ_FLAGS = os.O_RDONLY | O_BINARY
+WRITE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | O_BINARY
+BUFFER_SIZE = 128*1024
+
+
+def copyfile(src, dst):
+    with open(src, 'rb') as fda:
+        with open(dst, 'wb') as fdb:
+                shutil.copyfileobj(fda, fdb, length=64*1024)
+
+
+def copy_utility(src: str, dest: str):
+    # we might not be copying over the best connection, let's compress-and-copy
+    # and push the work to the cpu instead!
+    copyfile(src, dest)
+
+    #with open(src, mode='rb') as conn:
+    #    with lz4.frame.open(dest + '.lz4', mode='wb') as fp:
+    #        fp.write(conn.read())
+
+
+def copy_file(entry):
+    x, tgt, media_id = entry
+    data, id = x
+
+    _, file_extension = os.path.splitext(data['fpath'])
+    file_extension = file_extension.lower()
+
+    new_filename = f'{media_id}{file_extension}'
+
+    if id == -1:
+        # -- a noise point, outside of a cluster. Just copy this to the destination folder directly
+        to = os.path.join(tgt, new_filename)
+
+        copy_utility(data['fpath'], to)
+        return to
+
+    else:
+        # -- a cluster point. copy to a cluster folder inside the destination folder
+        tgt_dir = os.path.join(tgt, str(id))
+
+        try:
+            # -- construct the cluster subdirectory
+            os.makedirs(tgt_dir)
+        except FileExistsError:
+            pass
+        except:
+            raise
+
+        # -- move the file to an initial copy location
+        to = os.path.join(tgt_dir, new_filename)
+
+        copy_utility(data['fpath'], to)
+
+        return to
+
 def copy_media_files(args, files_by_date, clustering) -> None:
     """Copy media files to a new directory, grouped by cluster"""
 
     media_id = 0
     total_file_count = len(files_by_date)
 
-    for data, id in zip(files_by_date, clustering.labels_):
-        _, file_extension = os.path.splitext(data['fpath'])
-        file_extension = file_extension.lower()
+    entries = zip(list(files_by_date), clustering.labels_)
 
-        new_filename = f'{media_id}{file_extension}'
-        media_id += 1
+    with alive_bar(len(files_by_date)) as bar:
+        nproc = max(multiprocessing.cpu_count() - 1, 1)
 
-        if id == -1:
-            # -- a noise point, outside of a cluster. Just copy this to the destination folder directly
-            to = os.path.join(args['--to'], new_filename)
+        logging.info(
+            f'\nspinning up {nproc} processes to copy files.\n')
 
-            logging.info(
-                f'copying {str(media_id)} / {str(total_file_count)} {data["fpath"]} to {to}')
+        maps = [[entry, args['--to'], idx] for idx, entry in enumerate(entries)]
 
-            shutil.copy(data['fpath'], to)
+        # -- this copies reasonably fast on my machine;
+        # -- IO % is maxed out, disk-writes of about 70 M/s
+        with Pool(nproc) as pool:
+            for copied in pool.imap_unordered(copy_file, maps):
+                bar()
 
-        else:
-            # -- a cluster point. copy to a cluster folder inside the destination folder
-            tgt_dir = os.path.join(args['--to'], str(id))
+        #for target in targets:
+         #   if target:
+          #      rename_by_image_blur(target)
 
-            try:
-                # -- construct the cluster subdirectory
-                os.makedirs(tgt_dir)
-            except FileExistsError:
-                pass
-            except:
-                raise
+    # now that the files are copied, apply blurs to the target files
 
-            # -- move the file to an initial copy location
-            to = os.path.join(tgt_dir, new_filename)
-            logging.info(
-                f'copying {str(media_id)} / {str(total_file_count)} {data["fpath"]} to {to}')
-
-            shutil.copy(data['fpath'], to)
-
-            # -- rename by blur, if possible
-            rename_by_image_blur(to)
-
-    logging.info(f'done')
-
+    # todo
+    #with Pool(4) as pool:
+    #    pool.map(functools.partial(copy_file, args, media_id, bar), entries)
 
 # https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
 
@@ -173,7 +232,7 @@ def rename_by_image_blur(fpath: str):
 
 def copySubcommand(args: dict[str, Any]):
     logging.info(
-        f'reading media creation times from {args["--from"]}, be patient...')
+        f'reading media creation-times from {args["--from"]}, be patient...')
 
     files_by_date = list(list_media_by_date(args['--from']))
 
@@ -210,9 +269,6 @@ def main():
 
     args = docopt(__doc__, version='Badger 0.1')
 
-    if not args['copy'] and not args['flatten']:
-
-
     if args['--from'] == args['--to']:
         logging.error('--to and --from arguments cannot be the same')
         exit(1)
@@ -224,4 +280,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+      main()
+    except KeyboardInterrupt:
+        print('\nExiting...')
+        exit(1)
