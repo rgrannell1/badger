@@ -15,7 +15,8 @@ setup(
         "opencv-python",
         "docopt",
         "sklearn",
-        "Pillow"
+        "Pillow",
+        "alive_progress"
     ],
     packages=['badger'],
     entry_points={

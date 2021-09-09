@@ -31,13 +31,10 @@ Options:
     -h, --help                                       show this documentation.
 """
 
-import functools
-
 import multiprocessing
 import badger
 
 import signal
-import lz4.frame
 import os
 import shutil
 import glob
@@ -164,7 +161,9 @@ def copy_file(entry):
         # -- move the file to an initial copy location
         to = os.path.join(tgt_dir, new_filename)
 
-        copy_utility(data['fpath'], to)
+        # -- lets skip existing files for speed, we might want a force option later
+        if not pathlib.Path(to).exists():
+            copy_utility(data['fpath'], to)
 
         return to
 
@@ -215,23 +214,20 @@ def copy_media_files(dpath: str, files_by_date, clustering) -> None:
     nproc = max(multiprocessing.cpu_count() - 1, 1)
 
     logging.info(
-        f'\nspinning up {nproc} processes to copy & analyse files.\n')
+        f'spinning up {nproc} processes to copy & analyse files.\n')
 
     maps = [[entry, dpath, idx] for idx, entry in enumerate(entries)]
 
-        # -- this copies reasonably fast on my machine;
-        # -- IO % is maxed out, disk-writes of about 70 M/s
+    # -- this copies reasonably fast on my machine;
+    # -- IO % is maxed out, disk-writes of about 70 M/s
     with Pool(nproc, initializer=initialiser) as pool:
         try:
             with alive_bar(len(files_by_date)) as bar0:
                 dests = []
-                logging.info("copying media")
 
                 for copied in pool.imap_unordered(copy_file, maps):
                     dests.append(copied)
                     bar0()
-
-            logging.info("sorting images by blur")
 
             with alive_bar(len(dests)) as bar1:
                 for _ in pool.imap_unordered(rename_by_image_blur, dests):
@@ -262,13 +258,15 @@ def copySubcommand(args: dict[str, Any]):
     max_count = max(clustering.labels_)
 
     # -- prompt whether the user wants to proceed copying from one folder to the other
+    srcdir = args['--from']
+    destdir = args['--to']
     answer = yes_or_no(
-        f'would you like to copy {len(files_by_date)} files into {max_count} clusters in {args["--from"]} to entries within {args["--to"]}?')
+        f'> would you like to copy {len(files_by_date)} files from {srcdir} into {max_count} cluster-folders in {destdir}?')
 
     if not answer:
         return
 
-    copy_media_files(args['--to'], files_by_date, clustering)
+    copy_media_files(destdir, files_by_date, clustering)
 
 
 def flattenSubcommand(args: dict[str, Any]):
