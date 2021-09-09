@@ -36,6 +36,7 @@ import functools
 import multiprocessing
 import badger
 
+import signal
 import lz4.frame
 import os
 import shutil
@@ -167,37 +168,6 @@ def copy_file(entry):
 
         return to
 
-def copy_media_files(args, files_by_date, clustering) -> None:
-    """Copy media files to a new directory, grouped by cluster"""
-
-    media_id = 0
-    total_file_count = len(files_by_date)
-
-    entries = zip(list(files_by_date), clustering.labels_)
-
-    with alive_bar(len(files_by_date)) as bar:
-        nproc = max(multiprocessing.cpu_count() - 1, 1)
-
-        logging.info(
-            f'\nspinning up {nproc} processes to copy files.\n')
-
-        maps = [[entry, args['--to'], idx] for idx, entry in enumerate(entries)]
-
-        # -- this copies reasonably fast on my machine;
-        # -- IO % is maxed out, disk-writes of about 70 M/s
-        with Pool(nproc) as pool:
-            for copied in pool.imap_unordered(copy_file, maps):
-                bar()
-
-        #for target in targets:
-         #   if target:
-          #      rename_by_image_blur(target)
-
-    # now that the files are copied, apply blurs to the target files
-
-    # todo
-    #with Pool(4) as pool:
-    #    pool.map(functools.partial(copy_file, args, media_id, bar), entries)
 
 # https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
 
@@ -223,11 +193,53 @@ def rename_by_image_blur(fpath: str):
         tgt = os.path.join(dirname, f'{prefix}_{name}{ext}')
 
         # -- apply the file renaming
-        shutil.move(fpath, tgt)
+        os.rename(fpath, tgt)
 
     except Exception as err:
         print(f'failed to rename {fpath} according to blur: {err}')
         pass
+
+
+def initialiser():
+    """Ignore CTRL+C in the worker process."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+def copy_media_files(dpath: str, files_by_date, clustering) -> None:
+    """Copy media files to a new directory, grouped by cluster"""
+
+    media_id = 0
+    total_file_count = len(files_by_date)
+
+    entries = zip(list(files_by_date), clustering.labels_)
+
+    nproc = max(multiprocessing.cpu_count() - 1, 1)
+
+    logging.info(
+        f'\nspinning up {nproc} processes to copy & analyse files.\n')
+
+    maps = [[entry, dpath, idx] for idx, entry in enumerate(entries)]
+
+        # -- this copies reasonably fast on my machine;
+        # -- IO % is maxed out, disk-writes of about 70 M/s
+    with Pool(nproc, initializer=initialiser) as pool:
+        try:
+            with alive_bar(len(files_by_date)) as bar0:
+                dests = []
+                logging.info("copying media")
+
+                for copied in pool.imap_unordered(copy_file, maps):
+                    dests.append(copied)
+                    bar0()
+
+            logging.info("sorting images by blur")
+
+            with alive_bar(len(dests)) as bar1:
+                for _ in pool.imap_unordered(rename_by_image_blur, dests):
+                    bar1()
+        except KeyboardInterrupt:
+            # -- we suppressed sigints (ctrl + c), we need explicit handling here
+            pool.terminate()
+            pool.join()
 
 
 def copySubcommand(args: dict[str, Any]):
@@ -247,7 +259,6 @@ def copySubcommand(args: dict[str, Any]):
     seconds = np.array([data['seconds']
                        for data in files_by_date]).reshape(-1, 1)
     clustering = DBSCAN(eps=sec_diff, min_samples=CLUSTER_SIZE).fit(seconds)
-
     max_count = max(clustering.labels_)
 
     # -- prompt whether the user wants to proceed copying from one folder to the other
@@ -257,7 +268,7 @@ def copySubcommand(args: dict[str, Any]):
     if not answer:
         return
 
-    copy_media_files(args, files_by_date, clustering)
+    copy_media_files(args['--to'], files_by_date, clustering)
 
 
 def flattenSubcommand(args: dict[str, Any]):
