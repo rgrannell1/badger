@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"math"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,14 +11,14 @@ import (
 	"strings"
 
 	"bitbucket.org/sjbog/go-dbscan"
-	ed "github.com/Ernyoke/Imger/edgedetection"
-	"github.com/Ernyoke/Imger/imgio"
-	"github.com/Ernyoke/Imger/padding"
 	"github.com/docopt/docopt-go"
 	"github.com/manifoldco/promptui"
-	"github.com/rwcarlsen/goexif/exif"
+	"github.com/schollz/progressbar"
 )
 
+/*
+ * Get the time
+ */
 func GetCaptureTime(file string) int {
 	ctime, err := GetExifCreateTime(file)
 
@@ -26,26 +26,6 @@ func GetCaptureTime(file string) int {
 		return GetMtime(file)
 	} else {
 		return ctime
-	}
-}
-
-func GetExifCreateTime(file string) (int, error) {
-	conn, err := os.Open(file)
-	if err != nil {
-		return 0, err
-	}
-
-	metaData, err := exif.Decode(conn)
-	if err != nil {
-		return 0, err
-	}
-
-	time, err := metaData.DateTime()
-
-	if err != nil {
-		return 0, err
-	} else {
-		return int(time.Unix()), nil
 	}
 }
 
@@ -138,50 +118,49 @@ func PromptCopy(cluster MediaCluster) (bool, error) {
 	return false, nil
 }
 
-func ComputeBlur(src string) (float64, error) {
-	img, err := imgio.ImreadGray(src)
-
-	if err != nil {
-		panic(err)
+func AsDestFoo(fpath string, blur float64) string {
+	if blur == -1 {
+		return fpath
 	}
 
-	laplacian, err := ed.LaplacianGray(img, padding.BorderConstant, ed.K4)
-	if err != nil {
-		return 0, err
-	}
+	base := filepath.Base(fpath)
+	dir := strings.TrimSuffix(fpath, base)
 
-	pixSum := 0.0
-	for _, pix := range laplacian.Pix {
-		pixSum += float64(pix)
-	}
-
-	mean := pixSum / float64(len(laplacian.Pix))
-
-	diffs := make([]float64, len(laplacian.Pix))
-
-	for idx, pix := range laplacian.Pix {
-		diffs[idx] = math.Pow(float64(pix)-mean, 2)
-	}
-
-	variance := 0.0
-	for _, diff := range diffs {
-		variance += float64(diff)
-	}
-
-	variance = variance / float64(len(laplacian.Pix))
-
-	return math.Ceil(variance * 10), nil
+	return filepath.Join(dir, fmt.Sprint(blur)+"_"+base)
 }
 
-func IsImage(fpath string) bool {
-	return strings.HasSuffix(strings.ToLower(fpath), "jpg") || strings.HasSuffix(strings.ToLower(fpath), "jpeg") || strings.HasSuffix(strings.ToLower(fpath), "png")
+func CopyFile(src string, dst string, blur float64) error {
+	sourceFileStat, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if !sourceFileStat.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", src)
+	}
+
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(AsDestFoo(dst, blur))
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+	_, err = io.Copy(destination, source)
+
+	return err
 }
 
-func FileCopier(copyChan chan []string) {
+func FileCopier(copyChan chan []string, bar *progressbar.ProgressBar) {
 	for {
 		toCopy := <-copyChan
 
 		src := toCopy[0]
+		dst := toCopy[1]
 
 		if IsImage(src) {
 			blur, err := ComputeBlur(toCopy[0])
@@ -190,9 +169,11 @@ func FileCopier(copyChan chan []string) {
 				fmt.Println("error! ")
 			}
 
-			fmt.Println(blur)
+			CopyFile(src, dst, blur)
+			bar.Add(1)
 		}
 
+		CopyFile(src, dst, -1)
 	}
 }
 
@@ -273,20 +254,24 @@ func BadgerCopy(args BadgerCopyArgs) int {
 	}
 
 	// mostly IO-bound, lets try this!
-	PROC_COUNT := runtime.NumCPU() * 2
+	PROC_COUNT := runtime.NumCPU()
 
 	copyChans := make([]chan []string, PROC_COUNT)
+
+	tgtFile := clusters.ListTargetFiles(args.DstDir)
+	count := len(tgtFile)
+	bar := progressbar.Default(int64(count))
 
 	for idx := 0; idx < PROC_COUNT; idx++ {
 		copyChan := make(chan []string)
 
 		copyChans[idx] = copyChan
 
-		go FileCopier(copyChan)
+		go FileCopier(copyChan, bar)
 	}
 
 	// copy media src to target using multiple goroutines.
-	for idx, pair := range clusters.ListTargetFiles(args.DstDir) {
+	for idx, pair := range tgtFile {
 		tgtChan := copyChans[idx%PROC_COUNT]
 		tgtChan <- pair
 	}
