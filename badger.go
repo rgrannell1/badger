@@ -17,7 +17,7 @@ import (
 )
 
 /*
- * Get the time
+ * Get the time an image was captured.
  */
 func GetCaptureTime(file string) int {
 	ctime, err := GetExifCreateTime(file)
@@ -29,6 +29,9 @@ func GetCaptureTime(file string) int {
 	}
 }
 
+/*
+ * Get the the a file was modified
+ */
 func GetMtime(file string) int {
 	stat, err := os.Stat(file)
 
@@ -39,6 +42,9 @@ func GetMtime(file string) int {
 	return int(stat.ModTime().Unix())
 }
 
+/*
+ * List all media in a folder matching a glob.
+ */
 func listMedia(glob string) ([]Media, error) {
 	files, err := filepath.Glob(glob)
 
@@ -108,7 +114,7 @@ func PromptCopy(cluster MediaCluster) (bool, error) {
 
 	_, result, err := prompt.Run()
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("badger: failed to read user prompt: %v", err))
+		return false, fmt.Errorf("badger: failed to read user prompt: %v", err)
 	}
 
 	if result == "yes" {
@@ -155,7 +161,7 @@ func CopyFile(src string, dst string, blur float64) error {
 	return err
 }
 
-func FileCopier(copyChan chan []string, bar *progressbar.ProgressBar) {
+func FileCopier(copyChan chan []string, errChan chan error, bar *progressbar.ProgressBar) {
 	for {
 		toCopy := <-copyChan
 
@@ -169,11 +175,18 @@ func FileCopier(copyChan chan []string, bar *progressbar.ProgressBar) {
 				fmt.Println("error! ")
 			}
 
-			CopyFile(src, dst, blur)
-			bar.Add(1)
-		}
+			copyErr := CopyFile(src, dst, blur)
 
-		CopyFile(src, dst, -1)
+			if copyErr != nil {
+				errChan <- copyErr
+			}
+			bar.Add(1)
+		} else {
+			copyErr := CopyFile(src, dst, -1)
+			if copyErr != nil {
+				errChan <- copyErr
+			}
+		}
 	}
 }
 
@@ -253,10 +266,24 @@ func BadgerCopy(args BadgerCopyArgs) int {
 		}
 	}
 
-	// mostly IO-bound, lets try this!
+	err = clusters.MakeClusterDirs(args.DstDir)
+	if err != nil {
+		fmt.Println(err)
+		return 1
+	}
+
 	PROC_COUNT := runtime.NumCPU()
 
 	copyChans := make([]chan []string, PROC_COUNT)
+	errChan := make(chan error)
+
+	go func(errChan chan error) {
+		for {
+			err := <-errChan
+
+			fmt.Println(err)
+		}
+	}(errChan)
 
 	tgtFile := clusters.ListTargetFiles(args.DstDir)
 	count := len(tgtFile)
@@ -267,7 +294,7 @@ func BadgerCopy(args BadgerCopyArgs) int {
 
 		copyChans[idx] = copyChan
 
-		go FileCopier(copyChan, bar)
+		go FileCopier(copyChan, errChan, bar)
 	}
 
 	// copy media src to target using multiple goroutines.
@@ -279,6 +306,7 @@ func BadgerCopy(args BadgerCopyArgs) int {
 	return 0
 }
 
+// Start badger
 func Badger(opts *docopt.Opts) int {
 	if copy, _ := opts.Bool("copy"); copy {
 		args := BadgerCopyArgs{}
