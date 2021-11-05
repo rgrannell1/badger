@@ -69,6 +69,8 @@ func listMedia(glob string) ([]Media, error) {
 	return media, nil
 }
 
+// Use DBSCAN to cluster media files together based on the time
+// they were captured
 func clusterMedia(mediaList []Media) MediaCluster {
 	var clusterer = dbscan.NewDBSCANClusterer(9, 2)
 	clusterer.AutoSelectDimension = false
@@ -80,12 +82,15 @@ func clusterMedia(mediaList []Media) MediaCluster {
 	for idx, media := range mediaList {
 		mediaDict[media.fpath] = media
 
+		// create a named point, with the file as the name and the mtime as a
+		// dimension it is clustered along
 		data[idx] = &dbscan.NamedPoint{
 			Name:  media.fpath,
 			Point: []float64{float64(media.mtime)},
 		}
 	}
 
+	// cluster, and restructure the data for use later
 	clusters := clusterer.Cluster(data)
 	mediaClusters := make([][]Media, len(clusters))
 
@@ -105,6 +110,7 @@ func clusterMedia(mediaList []Media) MediaCluster {
 	}
 }
 
+// Prompt whether the user wants to proceed with file copying and clustering.
 func PromptCopy(cluster MediaCluster) (bool, error) {
 	message := "Would you like to copy " + fmt.Sprint(cluster.MediaCount()) + " media-items to " + fmt.Sprint(cluster.ClusterCount()) + " clusters?"
 	prompt := promptui.Select{
@@ -124,7 +130,9 @@ func PromptCopy(cluster MediaCluster) (bool, error) {
 	return false, nil
 }
 
-func AsDestFoo(fpath string, blur float64) string {
+// Compute a file name, based on the file path and the
+// amount of blur detected
+func BlurName(fpath string, blur float64) string {
 	if blur == -1 {
 		return fpath
 	}
@@ -135,6 +143,8 @@ func AsDestFoo(fpath string, blur float64) string {
 	return filepath.Join(dir, fmt.Sprint(blur)+"_"+base)
 }
 
+// Copy a source file to a destination, and name according to blur
+// if possible
 func CopyFile(src string, dst string, blur float64) error {
 	sourceFileStat, err := os.Stat(src)
 	if err != nil {
@@ -151,7 +161,8 @@ func CopyFile(src string, dst string, blur float64) error {
 	}
 	defer source.Close()
 
-	destination, err := os.Create(AsDestFoo(dst, blur))
+	// Create destination path; use blur in name if present
+	destination, err := os.Create(BlurName(dst, blur))
 	if err != nil {
 		return err
 	}
@@ -161,6 +172,8 @@ func CopyFile(src string, dst string, blur float64) error {
 	return err
 }
 
+// Receive from a copy channel, compute blur, and
+// copy files
 func FileCopier(copyChan chan []string, errChan chan error, bar *progressbar.ProgressBar) {
 	for {
 		toCopy := <-copyChan
@@ -194,6 +207,7 @@ type MediaCluster struct {
 	entries [][]Media
 }
 
+// Count the number of media entries, across clusters
 func (clust *MediaCluster) MediaCount() int {
 	idx := 0
 
@@ -204,10 +218,12 @@ func (clust *MediaCluster) MediaCount() int {
 	return idx
 }
 
+// Count the number of clusters present
 func (clust *MediaCluster) ClusterCount() int {
 	return len(clust.entries)
 }
 
+// Create a directory for each cluster
 func (clust *MediaCluster) MakeClusterDirs(dst string) error {
 	for idx, _ := range clust.entries {
 		cluster_dir := filepath.Join(dst, fmt.Sprint(idx))
@@ -221,14 +237,18 @@ func (clust *MediaCluster) MakeClusterDirs(dst string) error {
 	return nil
 }
 
+// List target files, and return pairs of file-paths + destination paths
 func (clust *MediaCluster) ListTargetFiles(dst string) [][]string {
 	targets := [][]string{}
 
 	for idx, cluster := range clust.entries {
+		// the cluster directory we are copying to
 		cluster_dir := filepath.Join(dst, fmt.Sprint(idx))
 
 		for _, media := range cluster {
+			// the name of the file + extension
 			name := media.idx + strings.ToLower(filepath.Ext(media.fpath))
+			// the target directory
 			target := filepath.Join(cluster_dir, name)
 
 			_, err := os.Stat(target)
@@ -242,6 +262,7 @@ func (clust *MediaCluster) ListTargetFiles(dst string) [][]string {
 	return targets
 }
 
+// Run Badger's copy task
 func BadgerCopy(args BadgerCopyArgs) int {
 	mediaList, err := listMedia(args.SrcDir)
 
@@ -251,8 +272,11 @@ func BadgerCopy(args BadgerCopyArgs) int {
 	}
 
 	// cluster using DBSCAN
+	// Use DBSCAN to cluster media files together based on the time
+	// they were captured
 	clusters := clusterMedia(mediaList)
 
+	// prompt whether to copy, interactively
 	if !args.AssumeYes {
 		ok, err := PromptCopy(clusters)
 
@@ -266,17 +290,21 @@ func BadgerCopy(args BadgerCopyArgs) int {
 		}
 	}
 
+	// make cluster directories
 	err = clusters.MakeClusterDirs(args.DstDir)
 	if err != nil {
 		fmt.Println(err)
 		return 1
 	}
 
+	// start multiple copy processes; blur computation will be
+	// CPU-bound so this will be CPU-bound overall
 	PROC_COUNT := runtime.NumCPU()
 
 	copyChans := make([]chan []string, PROC_COUNT)
 	errChan := make(chan error)
 
+	// Handle output errors
 	go func(errChan chan error) {
 		for {
 			err := <-errChan
@@ -289,6 +317,7 @@ func BadgerCopy(args BadgerCopyArgs) int {
 	count := len(tgtFile)
 	bar := progressbar.Default(int64(count))
 
+	// Distribute file-copies across processes
 	for idx := 0; idx < PROC_COUNT; idx++ {
 		copyChan := make(chan []string)
 
