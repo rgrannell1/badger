@@ -42,6 +42,24 @@ func GetMtime(file string) int {
 	return int(stat.ModTime().Unix())
 }
 
+var idx = 0
+var nameIds = map[string]int{}
+
+func AssignId(fpath string) string {
+	base := filepath.Base(fpath)
+	name := strings.TrimSuffix(fpath, base)
+
+	// assign, increment
+	if saved, ok := nameIds[name]; ok {
+		return fmt.Sprint(saved)
+	} else {
+		idx = idx + 1
+		nameIds[name] = idx
+
+		return fmt.Sprint(idx)
+	}
+}
+
 /*
  * List all media in a folder matching a glob.
  */
@@ -58,9 +76,10 @@ func listMedia(glob string) ([]Media, error) {
 
 	media := make([]Media, len(files))
 
+	// TODO: needs improved support for raws with shared files
 	for idx, file := range files {
 		media[idx] = Media{
-			idx:   fmt.Sprint(idx),
+			idx:   AssignId(file),
 			fpath: file,
 			mtime: GetCaptureTime(file),
 		}
@@ -166,6 +185,7 @@ func CopyFile(src string, dst string, blur float64) error {
 	if err != nil {
 		return err
 	}
+
 	defer destination.Close()
 	_, err = io.Copy(destination, source)
 
