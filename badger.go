@@ -42,21 +42,25 @@ func GetMtime(file string) int {
 	return int(stat.ModTime().Unix())
 }
 
-var idx = 0
+var fileIdState = 1
 var nameIds = map[string]int{}
 
+/*
+ * Assign an ID based on a filepath, so raw and jpge images can share properties.
+ *
+ */
 func AssignId(fpath string) string {
-	base := filepath.Base(fpath)
-	name := strings.TrimSuffix(fpath, base)
+	name := strings.TrimSuffix(fpath, filepath.Ext(fpath))
 
 	// assign, increment
 	if saved, ok := nameIds[name]; ok {
 		return fmt.Sprint(saved)
 	} else {
-		idx = idx + 1
-		nameIds[name] = idx
+		// increment a stateful file id, set in the dictionary
+		fileIdState = fileIdState + 1
+		nameIds[name] = fileIdState
 
-		return fmt.Sprint(idx)
+		return fmt.Sprint(fileIdState)
 	}
 }
 
@@ -76,10 +80,11 @@ func listMedia(glob string) ([]Media, error) {
 
 	media := make([]Media, len(files))
 
-	// TODO: needs improved support for raws with shared files
 	for idx, file := range files {
+		photoId := AssignId(file)
+
 		media[idx] = Media{
-			idx:   AssignId(file),
+			idx:   photoId,
 			fpath: file,
 			mtime: GetCaptureTime(file),
 		}
