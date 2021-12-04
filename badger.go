@@ -3,12 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/pprof"
 	"strings"
+	"sync"
 
 	"bitbucket.org/sjbog/go-dbscan"
 	"github.com/docopt/docopt-go"
@@ -45,12 +46,16 @@ func GetMtime(file string) int {
 var fileIdState = 1
 var nameIds = map[string]int{}
 
+func FilePrefix(fpath string) string {
+	return strings.TrimSuffix(fpath, filepath.Ext(fpath))
+}
+
 /*
  * Assign an ID based on a filepath, so raw and jpge images can share properties.
  *
  */
 func AssignId(fpath string) string {
-	name := strings.TrimSuffix(fpath, filepath.Ext(fpath))
+	name := FilePrefix(fpath)
 
 	// assign, increment
 	if saved, ok := nameIds[name]; ok {
@@ -78,6 +83,10 @@ func listMedia(glob string) ([]Media, error) {
 		return nil, errors.New("badger: the '--from' glob you provided didn't match any files; is your device connected, and the glob valid and not just a directory path?")
 	}
 
+	if len(files) == 1 {
+		return nil, errors.New("badger: the '--from' glob only matched one file; is your device connected, and the glob valid and not just a directory path?")
+	}
+
 	media := make([]Media, len(files))
 
 	for idx, file := range files {
@@ -95,8 +104,8 @@ func listMedia(glob string) ([]Media, error) {
 
 // Use DBSCAN to cluster media files together based on the time
 // they were captured
-func clusterMedia(mediaList []Media) MediaCluster {
-	var clusterer = dbscan.NewDBSCANClusterer(9, 2)
+func clusterMedia(eps float64, minPoints int, mediaList []Media) MediaCluster {
+	var clusterer = dbscan.NewDBSCANClusterer(eps, minPoints)
 	clusterer.AutoSelectDimension = false
 	clusterer.SortDimensionIndex = 0
 
@@ -199,10 +208,8 @@ func CopyFile(src string, dst string, blur float64) error {
 
 // Receive from a copy channel, compute blur, and
 // copy files
-func FileCopier(copyChan chan []string, errChan chan error, bar *progressbar.ProgressBar) {
-	for {
-		toCopy := <-copyChan
-
+func FileCopier(wg *sync.WaitGroup, copyChan chan []string, errChan chan error, bar *progressbar.ProgressBar) {
+	for toCopy := range copyChan {
 		src := toCopy[0]
 		dst := toCopy[1]
 
@@ -210,7 +217,7 @@ func FileCopier(copyChan chan []string, errChan chan error, bar *progressbar.Pro
 			blur, err := ComputeBlur(toCopy[0])
 
 			if err != nil {
-				fmt.Println("error! ")
+				panic(err)
 			}
 
 			copyErr := CopyFile(src, dst, blur)
@@ -218,12 +225,17 @@ func FileCopier(copyChan chan []string, errChan chan error, bar *progressbar.Pro
 			if copyErr != nil {
 				errChan <- copyErr
 			}
+
+			wg.Done()
 			bar.Add(1)
 		} else {
 			copyErr := CopyFile(src, dst, -1)
 			if copyErr != nil {
 				errChan <- copyErr
 			}
+
+			wg.Done()
+			bar.Add(1)
 		}
 	}
 }
@@ -299,7 +311,7 @@ func BadgerCopy(args BadgerCopyArgs) int {
 	// cluster using DBSCAN
 	// Use DBSCAN to cluster media files together based on the time
 	// they were captured
-	clusters := clusterMedia(mediaList)
+	clusters := clusterMedia(9, 2, mediaList)
 
 	// prompt whether to copy, interactively
 	if !args.AssumeYes {
@@ -326,36 +338,34 @@ func BadgerCopy(args BadgerCopyArgs) int {
 	// CPU-bound so this will be CPU-bound overall
 	PROC_COUNT := runtime.NumCPU()
 
-	copyChans := make([]chan []string, PROC_COUNT)
 	errChan := make(chan error)
-
-	// Handle output errors
-	go func(errChan chan error) {
-		for {
-			err := <-errChan
-
-			fmt.Println(err)
-		}
-	}(errChan)
+	copyChan := make(chan []string)
 
 	tgtFile := clusters.ListTargetFiles(args.DstDir)
 	count := len(tgtFile)
 	bar := progressbar.Default(int64(count))
 
+	var wg sync.WaitGroup
+	wg.Add(len(tgtFile))
+
 	// Distribute file-copies across processes
 	for idx := 0; idx < PROC_COUNT; idx++ {
-		copyChan := make(chan []string)
-
-		copyChans[idx] = copyChan
-
-		go FileCopier(copyChan, errChan, bar)
+		go FileCopier(&wg, copyChan, errChan, bar)
 	}
 
-	// copy media src to target using multiple goroutines.
-	for idx, pair := range tgtFile {
-		tgtChan := copyChans[idx%PROC_COUNT]
-		tgtChan <- pair
+	for _, job := range tgtFile {
+		copyChan <- job
 	}
+
+	close(copyChan)
+	select {
+	case err := <-errChan:
+		panic(err)
+	default:
+	}
+
+	wg.Wait()
+	close(errChan)
 
 	return 0
 }
@@ -374,12 +384,8 @@ func Badger(opts *docopt.Opts) int {
 		args.SrcDir = srcDir
 		args.DstDir = dstDir
 
-		f, _ := os.Create("trace.out")
-		pprof.StartCPUProfile(f)
-
 		code := BadgerCopy(args)
 
-		f.Close()
 		return code
 	}
 
