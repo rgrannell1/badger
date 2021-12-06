@@ -17,6 +17,8 @@ import (
 	"github.com/schollz/progressbar"
 )
 
+var blurByFile = map[string]float64{}
+
 /*
  * Get the time an image was captured.
  */
@@ -166,8 +168,17 @@ func PromptCopy(cluster MediaCluster) (bool, error) {
 // Compute a file name, based on the file path and the
 // amount of blur detected
 func BlurName(fpath string, blur float64) string {
-	if blur == -1 {
-		return fpath
+	savedBlur, ok := blurByFile[FilePrefix(fpath)]
+
+	// when blur is not present
+	if blur < 0 {
+		if !ok {
+			// not possible, return
+			return fpath
+		}
+
+		// override blur with saved blur
+		blur = savedBlur
 	}
 
 	base := filepath.Base(fpath)
@@ -213,30 +224,28 @@ func FileCopier(wg *sync.WaitGroup, copyChan chan []string, errChan chan error, 
 		src := toCopy[0]
 		dst := toCopy[1]
 
+		blur := -1.0
+
+		// compute blur, if possible
 		if IsImage(src) {
-			blur, err := ComputeBlur(toCopy[0])
+			imgBlur, err := ComputeBlur(src)
+			blurByFile[FilePrefix(src)] = blur
+			blur = imgBlur
 
 			if err != nil {
 				panic(err)
 			}
-
-			copyErr := CopyFile(src, dst, blur)
-
-			if copyErr != nil {
-				errChan <- copyErr
-			}
-
-			wg.Done()
-			bar.Add(1)
-		} else {
-			copyErr := CopyFile(src, dst, -1)
-			if copyErr != nil {
-				errChan <- copyErr
-			}
-
-			wg.Done()
-			bar.Add(1)
 		}
+
+		// copy the file, and apply the blur name if possible
+		copyErr := CopyFile(src, dst, blur)
+
+		if copyErr != nil {
+			errChan <- copyErr
+		}
+
+		wg.Done()
+		bar.Add(1)
 	}
 }
 
@@ -296,7 +305,19 @@ func (clust *MediaCluster) ListTargetFiles(dst string) [][]string {
 		}
 	}
 
-	return targets
+	// we want to sort so images appear first, then non-image files
+	images := [][]string{}
+	alternative := [][]string{}
+
+	for _, tgt := range targets {
+		if IsImage(tgt[0]) {
+			images = append(images, tgt)
+		} else {
+			alternative = append(alternative, tgt)
+		}
+	}
+
+	return append(images, alternative...)
 }
 
 // Run Badger's copy task
