@@ -47,12 +47,8 @@ func (media *Media) GetType() MediaType {
 	return UNKNOWN
 }
 
-func (media *Media) GetDest() string {
-	return ""
-}
-
 func (media *Media) GetPrefix() string {
-	return ""
+	return strings.TrimSuffix(media.source, media.GetExt())
 }
 
 func (media *Media) GetExt() string {

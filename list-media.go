@@ -17,8 +17,18 @@ func (media *MediaList) Size() int {
 	return len(media.library)
 }
 
-func (library *MediaList) GetByPrefix(prefix string) []*Media {
-	return ""
+func (library *MediaList) GetByPrefix(media *Media) []*Media {
+	prefix := media.GetPrefix()
+
+	matches := []*Media{}
+
+	for _, candidate := range library.Values() {
+		if candidate.GetPrefix() == prefix {
+			matches = append(matches, candidate)
+		}
+	}
+
+	return matches
 }
 
 func NewMediaList(library []*Media) *MediaList {

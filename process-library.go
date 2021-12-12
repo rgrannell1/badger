@@ -145,17 +145,24 @@ func CopyFiles(wg sync.WaitGroup, imageBlur *BlurStore, copyChan chan CopyJob, r
 	wg.Done()
 }
 
-func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, copyJobs chan CopyJob, bar *ProgressBar) {
+func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, copyJobs chan CopyJob, library *MediaList, bar *ProgressBar) {
 	for media := range blurChan {
 		blur, err := imageBlur.SaveBlur(&media)
 		if err != nil {
 			panic(err)
 		}
 
+		fmt.Println("starting prefix copy")
+
 		// the image is now ready to copy, since blur was computed
-		copyJobs <- CopyJob{
-			from: media,
-			to:   media.GetChosenName(blur),
+		for _, shared := range library.GetByPrefix(&media) {
+			to := shared.GetChosenName(blur)
+			fmt.Println("starting " + shared.source + " -> " + to)
+
+			copyJobs <- CopyJob{
+				from: *shared,
+				to:   to,
+			}
 		}
 	}
 
@@ -165,7 +172,7 @@ func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, 
 /*
  * Compute blur, and copy files across
  */
-func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts) {
+func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, library *MediaList) {
 	// construct folders for each cluster, and the root folder
 	err := MakeFolders(opts.to, clusters.clusters)
 	bail(err)
@@ -192,7 +199,7 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts) {
 	blurJobs := make(chan Media, len(clusters.entries))
 
 	for blurId := 0; blurId < CPU_COUNT-1; blurId++ {
-		go CalcuateBlur(preblurWg, &imageBlur, blurJobs, copyJobs, bar)
+		go CalcuateBlur(preblurWg, &imageBlur, blurJobs, copyJobs, library, bar)
 	}
 
 	// start blur jobs

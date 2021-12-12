@@ -161,7 +161,7 @@ func Badger(opts *BadgerOpts) int {
 		return 0
 	}
 
-	ProcessLibrary(opts, clusters, facts)
+	ProcessLibrary(opts, clusters, facts, library)
 
 	// start scoring and copying
 	return 0
