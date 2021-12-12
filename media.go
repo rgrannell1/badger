@@ -2,10 +2,14 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"strings"
 
+	ed "github.com/Ernyoke/Imger/edgedetection"
+	"github.com/Ernyoke/Imger/imgio"
+	"github.com/Ernyoke/Imger/padding"
 	"github.com/rwcarlsen/goexif/exif"
 )
 
@@ -55,8 +59,8 @@ func (media *Media) GetExt() string {
 	return path.Ext(media.source)
 }
 
-func (media *Media) GetChosenName(blur int) string {
-	return media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(media.id) + media.GetExt()
+func (media *Media) GetChosenName(blur float64) string {
+	return media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(blur) + "_" + fmt.Sprint(media.id) + media.GetExt()
 }
 
 func (media *Media) GetName() string {
@@ -67,8 +71,39 @@ func (media *Media) SetBlur(blur int) {
 	media.blur = blur
 }
 
-func (media *Media) GetBlur() int {
-	return media.blur
+func (media *Media) GetBlur() (float64, error) {
+	img, err := imgio.ImreadGray(media.source)
+
+	if err != nil {
+		panic(err)
+	}
+
+	laplacian, err := ed.LaplacianGray(img, padding.BorderConstant, ed.K4)
+	if err != nil {
+		return 0, err
+	}
+
+	pixSum := 0.0
+	for _, pix := range laplacian.Pix {
+		pixSum += float64(pix)
+	}
+
+	mean := pixSum / float64(len(laplacian.Pix))
+
+	diffs := make([]float64, len(laplacian.Pix))
+
+	for idx, pix := range laplacian.Pix {
+		diffs[idx] = math.Pow(float64(pix)-mean, 2)
+	}
+
+	variance := 0.0
+	for _, diff := range diffs {
+		variance += float64(diff)
+	}
+
+	variance = variance / float64(len(laplacian.Pix))
+
+	return math.Ceil(variance * 10), nil
 }
 
 func (media *Media) Size() (int64, error) {

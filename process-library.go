@@ -45,19 +45,26 @@ type BlurStore struct {
 	data sync.Map
 }
 
-func (store *BlurStore) SaveBlur(media *Media) {
+func (store *BlurStore) SaveBlur(media *Media) (float64, error) {
 	prefix := media.GetPrefix()
-	store.data.Store(prefix, media.GetBlur())
+	blur, err := media.GetBlur()
+
+	if err != nil {
+		return 0, err
+	}
+
+	store.data.Store(prefix, blur)
+	return blur, nil
 }
 
-func (store *BlurStore) GetBlur(media *Media) int {
+func (store *BlurStore) GetStoredBlur(media *Media) float64 {
 	prefix := media.GetPrefix()
 	val, ok := store.data.Load(prefix)
 
 	if !ok {
 		return -1
 	} else {
-		return val.(int)
+		return val.(float64)
 	}
 }
 
@@ -91,7 +98,7 @@ func CopyFiles(wg sync.WaitGroup, imageBlur *BlurStore, copyChan chan CopyJob, r
 
 		// retrieve the blur. This should be set prior to copy-job creation by a blur job.
 		// it will not be present for videos
-		blur := imageBlur.GetBlur(&job.from)
+		blur := imageBlur.GetStoredBlur(&job.from)
 		blurPath := job.from.GetChosenName(blur)
 
 		destination, err := os.Create(blurPath)
@@ -138,16 +145,17 @@ func CopyFiles(wg sync.WaitGroup, imageBlur *BlurStore, copyChan chan CopyJob, r
 	wg.Done()
 }
 
-func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan *Media, bar *ProgressBar) {
+func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, copyJobs chan CopyJob, bar *ProgressBar) {
 	for media := range blurChan {
-		imageBlur.SaveBlur(media)
-		size, err := media.Size()
-
+		blur, err := imageBlur.SaveBlur(&media)
 		if err != nil {
 			panic(err)
 		}
 
-		bar.Update(size)
+		copyJobs <- CopyJob{
+			from: media,
+			to:   media.GetChosenName(blur),
+		}
 	}
 
 	wg.Done()
@@ -162,26 +170,28 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts) {
 	bail(err)
 
 	copyJobs := make(chan CopyJob, len(clusters.entries))
-	blurJobs := make(chan *Media, len(clusters.entries))
-	resultChan := make(chan JobResult, len(clusters.entries))
 
-	var wg sync.WaitGroup
+	var preblurWg sync.WaitGroup
 	var imageBlur BlurStore
 
 	bar := NewProgressBar(int64(facts.size))
 
 	const COPY_COUNT = 10
-	wg.Add(COPY_COUNT)
+	preblurWg.Add(COPY_COUNT)
+
+	resultChan := make(chan JobResult, len(clusters.entries))
 
 	for copyId := 0; copyId < COPY_COUNT; copyId++ {
-		go CopyFiles(wg, &imageBlur, copyJobs, resultChan, bar)
+		go CopyFiles(preblurWg, &imageBlur, copyJobs, resultChan, bar)
 	}
 
 	CPU_COUNT := runtime.NumCPU()
-	wg.Add(CPU_COUNT - 1)
+	preblurWg.Add(CPU_COUNT - 1)
+
+	blurJobs := make(chan Media, len(clusters.entries))
 
 	for blurId := 0; blurId < CPU_COUNT-1; blurId++ {
-		go CalcuateBlur(wg, &imageBlur, blurJobs, bar)
+		go CalcuateBlur(preblurWg, &imageBlur, blurJobs, copyJobs, bar)
 	}
 
 	// start blur jobs
@@ -190,8 +200,8 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts) {
 
 		// send this media immediately
 		if mediaType == PHOTO {
-			blurJobs <- &media
-		} else {
+			blurJobs <- media
+		} else if mediaType != RAW {
 			copyJobs <- media.CopyJob()
 		}
 	}
@@ -205,5 +215,5 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts) {
 	default:
 	}
 
-	wg.Wait()
+	preblurWg.Wait()
 }
