@@ -11,7 +11,7 @@ badger is a tool that helps you filter large folders of photos. It:
 ## Usage
 
 ```bash
-badger copy --from '/media/rg/3236-3061/DCIM/**/*' --to '/home/rg/Desktop/resources' --max-seconds-diff 4
+badger --from '/media/rg/3236-3061/DCIM/**/*' --to '/home/rg/Desktop/resources' --max-seconds-diff 4
 ```
 
 ## License

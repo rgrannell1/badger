@@ -8,7 +8,11 @@
       "mode": "auto",
       "program": "${workspaceFolder}",
       "args": [
-        "copy", "--from", "/media/rg/3236-3061/DCIM/**/*", "--to", "~/Desktop/SimpleCopy", "--yes"
+        "--from",
+        "/home/rg/Desktop/US-All/*",
+        "--to",
+        "/home/rg/Desktop/test",
+        "--yes"
       ]
     }
   ]
