@@ -17,16 +17,16 @@ func (clusters *MediaCluster) ClusterSize() int {
  * Apply DBSCAN clustering to a set of media, based on their creation times. Apply this to all
  * files present.
  */
-func ClusterMedia(epsilon float64, minPoints int, library []*Media) *MediaCluster {
+func ClusterMedia(epsilon float64, minPoints int, library *MediaList) *MediaCluster {
 	// create the clusterer
 	var clusterer = dbscan.NewDBSCANClusterer(epsilon, minPoints)
 	clusterer.AutoSelectDimension = false
 	clusterer.SortDimensionIndex = 0
 
-	var data = make([]dbscan.ClusterablePoint, len(library))
+	var data = make([]dbscan.ClusterablePoint, library.Size())
 	var mediaDict = make(map[string]Media)
 
-	for idx, media := range library {
+	for idx, media := range library.Values() {
 		mediaDict[media.source] = *media
 
 		// create a named point, with the file as the name and the mtime as a

@@ -152,6 +152,7 @@ func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, 
 			panic(err)
 		}
 
+		// the image is now ready to copy, since blur was computed
 		copyJobs <- CopyJob{
 			from: media,
 			to:   media.GetChosenName(blur),

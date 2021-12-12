@@ -63,14 +63,6 @@ func (media *Media) GetChosenName(blur float64) string {
 	return media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(blur) + "_" + fmt.Sprint(media.id) + media.GetExt()
 }
 
-func (media *Media) GetName() string {
-	return ""
-}
-
-func (media *Media) SetBlur(blur int) {
-	media.blur = blur
-}
-
 func (media *Media) GetBlur() (float64, error) {
 	img, err := imgio.ImreadGray(media.source)
 

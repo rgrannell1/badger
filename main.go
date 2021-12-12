@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/docopt/docopt-go"
 	"github.com/manifoldco/promptui"
@@ -33,38 +32,6 @@ type BadgerOpts struct {
 	yes            bool
 }
 
-func (opts *BadgerOpts) ListMedia() ([]*Media, error) {
-	files, err := filepath.Glob(opts.from)
-
-	// double-check listed files
-	if err != nil {
-		return nil, err
-	}
-
-	if len(files) == 0 {
-		return nil, errors.New("badger: the '--from' glob you provided didn't match any files; is your device connected, and the glob valid and not just a directory path?")
-	}
-
-	if len(files) == 1 {
-		return nil, errors.New("badger: the '--from' glob only matched one file; is your device connected, and the glob valid and not just a directory path?")
-	}
-
-	// construct media objects for each file
-	library := make([]*Media, len(files))
-
-	for idx, fpath := range files {
-		media := Media{
-			source: fpath,
-			dstDir: opts.to,
-			id:     idx,
-		}
-
-		library[idx] = &media
-	}
-
-	return library, nil
-}
-
 type Facts struct {
 	count        int
 	size         int
@@ -79,7 +46,7 @@ type Facts struct {
 	freeSpace    uint64
 }
 
-func GatherFacts(library []*Media) (*Facts, error) {
+func GatherFacts(library *MediaList) (*Facts, error) {
 	size := 0
 	videoCount := 0
 	photoCount := 0
@@ -90,7 +57,7 @@ func GatherFacts(library []*Media) (*Facts, error) {
 	rawSize := 0
 	unknownCount := 0
 
-	for _, media := range library {
+	for _, media := range library.Values() {
 		mediaSize, err := media.Size()
 
 		if err != nil {
@@ -119,7 +86,7 @@ func GatherFacts(library []*Media) (*Facts, error) {
 	bail(err)
 
 	return &Facts{
-		count:        len(library),
+		count:        library.Size(),
 		size:         size,
 		videoCount:   videoCount,
 		photoCount:   photoCount,
@@ -240,6 +207,7 @@ func main() {
 	}
 
 	err = ValidateOpts(&bopts)
+	bail(err)
 
 	os.Exit(Badger(&bopts))
 }
