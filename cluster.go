@@ -60,3 +60,17 @@ func ClusterMedia(epsilon float64, minPoints int, library *MediaList) *MediaClus
 		entries:  labelledMedia,
 	}
 }
+
+func (cluster *MediaCluster) GetByPrefix(media *Media) []*Media {
+	prefix := media.GetPrefix()
+
+	matches := []*Media{}
+
+	for _, candidate := range cluster.entries {
+		if candidate.GetPrefix() == prefix {
+			matches = append(matches, &candidate)
+		}
+	}
+
+	return matches
+}

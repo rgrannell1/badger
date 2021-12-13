@@ -10,6 +10,9 @@ import (
 	"sync"
 )
 
+/*
+ * Make directories for each cluster
+ */
 func (clust *MediaCluster) MakeClusterDirs(dst string) error {
 	for idx := range clust.entries {
 		cluster_dir := filepath.Join(dst, fmt.Sprint(idx))
@@ -34,11 +37,6 @@ func MakeFolders(to string, clusters int) error {
 	}
 
 	return nil
-}
-
-type CopyJob struct {
-	from Media
-	to   string
 }
 
 type BlurStore struct {
@@ -76,93 +74,89 @@ type JobResult struct {
 /*
  *
  */
-func CopyFiles(wg sync.WaitGroup, imageBlur *BlurStore, copyChan chan CopyJob, resultChan chan JobResult, bar *ProgressBar) {
-	for job := range copyChan {
+func CopyFiles(wg sync.WaitGroup, imageBlur *BlurStore, copyChan chan Media, resultChan chan JobResult, bar *ProgressBar) {
+	for media := range copyChan {
 		// copy the file, and apply the blur name if possible
-		sourceFileStat, err := os.Stat(job.from.source)
+		sourceFileStat, err := os.Stat(media.source)
 		if err != nil {
-			resultChan <- JobResult{job.from, err}
+			resultChan <- JobResult{media, err}
 			return
 		}
 
 		if !sourceFileStat.Mode().IsRegular() {
-			err := errors.New(job.from.source + " is not a regular file")
-			resultChan <- JobResult{job.from, err}
+			err := errors.New(media.source + " is not a regular file")
+			resultChan <- JobResult{media, err}
 		}
 
-		source, err := os.Open(job.from.source)
+		// open the media source
+		source, err := os.Open(media.source)
 		if err != nil {
-			resultChan <- JobResult{job.from, err}
+			resultChan <- JobResult{media, err}
 			return
 		}
 
 		// retrieve the blur. This should be set prior to copy-job creation by a blur job.
 		// it will not be present for videos
-		blur := imageBlur.GetStoredBlur(&job.from)
-		blurPath := job.from.GetChosenName(blur)
+		blur := imageBlur.GetStoredBlur(&media)
+		blurPath := media.GetChosenName(blur)
 
 		destination, err := os.Create(blurPath)
 		if err != nil {
-			resultChan <- JobResult{job.from, err}
+			resultChan <- JobResult{media, err}
 			return
-		}
-
-		size, err := job.from.Size()
-		if err != nil {
-			panic(err)
 		}
 
 		// if the destination file exists, continue
 		if _, err := os.Stat(blurPath); errors.Is(err, os.ErrNotExist) {
-			bar.Update(size)
+			bar.Update(&media)
 			continue
 		}
 
+		// copy from source to destination file
 		_, err = io.Copy(destination, source)
 
 		if err != nil {
-			resultChan <- JobResult{job.from, err}
+			resultChan <- JobResult{media, err}
 			return
 		}
 
 		err = source.Close()
 
 		if err != nil {
-			resultChan <- JobResult{job.from, err}
+			resultChan <- JobResult{media, err}
 			return
 		}
 
 		err = destination.Close()
 
 		if err != nil {
-			resultChan <- JobResult{job.from, err}
+			resultChan <- JobResult{media, err}
 			return
 		}
 
-		bar.Update(size)
+		bar.Update(&media)
 	}
 
 	wg.Done()
 }
 
-func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, copyJobs chan CopyJob, library *MediaList, bar *ProgressBar) {
+/*
+ * Calculate the blur for each image, and start copy-jobs afterwards
+ */
+func CalcuateBlur(wg sync.WaitGroup, imageBlur *BlurStore, blurChan chan Media, copyJobs chan Media, library *MediaList, bar *ProgressBar) {
 	for media := range blurChan {
-		blur, err := imageBlur.SaveBlur(&media)
+
+		_, err := imageBlur.SaveBlur(&media)
 		if err != nil {
 			panic(err)
 		}
 
-		fmt.Println("starting prefix copy")
-
 		// the image is now ready to copy, since blur was computed
 		for _, shared := range library.GetByPrefix(&media) {
-			to := shared.GetChosenName(blur)
-			fmt.Println("starting " + shared.source + " -> " + to)
+			// clusterId is not present in the library, only in clustered data
+			shared.clusterId = media.clusterId
 
-			copyJobs <- CopyJob{
-				from: *shared,
-				to:   to,
-			}
+			copyJobs <- *shared
 		}
 	}
 
@@ -177,7 +171,7 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 	err := MakeFolders(opts.to, clusters.clusters)
 	bail(err)
 
-	copyJobs := make(chan CopyJob, len(clusters.entries))
+	copyJobs := make(chan Media, len(clusters.entries))
 
 	var preblurWg sync.WaitGroup
 	var imageBlur BlurStore
@@ -198,6 +192,7 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 
 	blurJobs := make(chan Media, len(clusters.entries))
 
+	// start each blur worker
 	for blurId := 0; blurId < CPU_COUNT-1; blurId++ {
 		go CalcuateBlur(preblurWg, &imageBlur, blurJobs, copyJobs, library, bar)
 	}
@@ -210,7 +205,7 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 		if mediaType == PHOTO {
 			blurJobs <- media
 		} else if mediaType != RAW {
-			copyJobs <- media.CopyJob()
+			copyJobs <- media
 		}
 	}
 

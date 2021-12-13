@@ -56,7 +56,14 @@ func (media *Media) GetExt() string {
 }
 
 func (media *Media) GetChosenName(blur float64) string {
-	return media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(blur) + "_" + fmt.Sprint(media.id) + media.GetExt()
+	fpath := ""
+	if blur == -1 {
+		fpath = media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(media.id) + media.GetExt()
+	} else {
+		fpath = media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(blur) + "_" + fmt.Sprint(media.id) + media.GetExt()
+	}
+
+	return fpath
 }
 
 func (media *Media) GetBlur() (float64, error) {
@@ -126,19 +133,6 @@ func (media *Media) GetMtime() int {
 	media.mtime = int(stat.ModTime().Unix())
 
 	return media.mtime
-}
-
-func (media *Media) CopyJob() CopyJob {
-	if len(media.dstDir) == 0 {
-		panic("invalid media; dstDir was missing")
-	}
-
-	to := media.dstDir + "/" + fmt.Sprint(media.clusterId) + media.GetExt()
-
-	return CopyJob{
-		from: *media,
-		to:   to,
-	}
 }
 
 func (media *Media) GetExifCreateTime() (int, error) {
