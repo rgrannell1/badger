@@ -197,6 +197,7 @@ func CalcuateBlur(procCount int, library *MediaList, clusters *MediaCluster) cha
 
 				// look up files with the same prefix, copy blur and prefix
 				for _, shared := range library.GetByPrefix(&media) {
+					shared.id = media.id
 					shared.clusterId = media.clusterId
 					shared.blur = int(blur)
 
