@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"os"
 	"sync"
+	"text/template"
 	"time"
-
-	tm "github.com/buger/goterm"
 )
 
 type ProgressBar struct {
@@ -15,6 +16,28 @@ type ProgressBar struct {
 	start     time.Time
 	last      time.Time
 }
+
+type ProgressView struct {
+	Percentage  float64
+	RateMB      float64
+	CopiedMB    int
+	TotalMB     int
+	RemainingMB int
+	Src         string
+	Dst         string
+}
+
+const ProgressBarTemplate = `
+🦡
+Clustered & Copied {{.Percentage}}% MB @ {{.RateMB}}MB/s
+
+{{.Src}} -> {{.Dst}}
+
+Copied:    {{.CopiedMB}}MB
+Total:     {{.TotalMB}}MB
+Remaining: {{.RemainingMB}}MB
+
+`
 
 /*
  * Construct a progress-bar
@@ -33,21 +56,33 @@ func NewProgressBar(count int64) *ProgressBar {
 /*
  * Render a progress bar in place
  */
-func (bar *ProgressBar) Render() {
-	elapsed := bar.last.Sub(bar.start).Seconds()
+func (bar *ProgressBar) Render(media *Media) {
+	pct := (float64(bar.completed) / float64(bar.count)) * 100
 
-	if int64(elapsed) == 0 {
-		return
+	copied := bar.completed / 1e6
+	total := bar.count / 1e6
+	remaining := (bar.count - bar.completed) / 1e6
+
+	view := ProgressView{
+		Percentage:  math.Round(pct*100) / 100,
+		RateMB:      0,
+		CopiedMB:    int(copied),
+		TotalMB:     int(total),
+		RemainingMB: int(remaining),
+		Src:         media.source,
+		Dst:         media.GetChosenName(float64(media.blur)),
+	}
+	tmpl, err := template.New("progress-bar").Parse(ProgressBarTemplate)
+
+	if err != nil {
+		panic(err)
 	}
 
-	perSecond := ((bar.completed / int64(elapsed)) / 1e6) / 8
-
-	pct := ((float64(bar.completed) / float64(bar.count)) * 100)
-	message := "🦡 " + fmt.Sprint(pct) + "% " + fmt.Sprint(perSecond) + "MB/s\n"
-
-	tm.MoveCursor(1, 1)
-	tm.Println(message)
-	tm.Flush()
+	fmt.Print("\033[H\033[2J")
+	err = tmpl.Execute(os.Stdout, view)
+	if err != nil {
+		panic(err)
+	}
 }
 
 /*
@@ -62,7 +97,7 @@ func (bar *ProgressBar) Update(media *Media) {
 	}
 
 	bar.completed += size
-	bar.Render()
+	bar.Render(media)
 	bar.last = time.Now()
 	bar.lock.Unlock()
 }

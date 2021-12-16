@@ -1,6 +1,6 @@
 module github.com/rgrannell1/badger/v2
 
-go 1.15
+go 1.18
 
 require (
 	bitbucket.org/sjbog/go-dbscan v0.0.0-20150721083751-f30c2f04d63c
@@ -11,3 +11,5 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	golang.org/x/sys v0.0.0-20211210111614-af8b64212486
 )
+
+require github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect

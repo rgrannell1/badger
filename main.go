@@ -8,7 +8,6 @@ import (
 	tm "github.com/buger/goterm"
 	"github.com/docopt/docopt-go"
 	"github.com/manifoldco/promptui"
-	"golang.org/x/sys/unix"
 )
 
 const Usage = `badger: cluster photos by date, and sort by blurriness.
@@ -211,7 +210,8 @@ func Badger(opts *BadgerOpts) int {
 	}
 
 	// start processing the media library
-	ProcessLibrary(opts, clusters, facts, library)
+	err = ProcessLibrary(opts, clusters, facts, library)
+	bail(err)
 
 	// start scoring and copying
 	return 0
@@ -266,17 +266,4 @@ func main() {
 	if copy, _ := opts.Bool("copy"); copy {
 		os.Exit(1)
 	}
-}
-
-/*
- * Get free-space in the target hard-drive
- */
-func GetFreeSpace() (uint64, error) {
-	var stat unix.Statfs_t
-
-	root := "/home/rg"
-	err := unix.Statfs(root, &stat)
-	bail(err)
-
-	return stat.Bavail * uint64(stat.Bsize), nil
 }
