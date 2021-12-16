@@ -62,17 +62,17 @@ type BadgerOpts struct {
 
 // Facts about the media-library, like size and count
 type Facts struct {
-	count        int
-	size         int
-	videoCount   int
-	photoCount   int
-	rawCount     int
-	unknownCount int
-	videoSize    int
-	photoSize    int
-	rawSize      int
-	unknownSize  int
-	freeSpace    uint64
+	Count        int
+	Size         int
+	VideoCount   int
+	PhotoCount   int
+	RawCount     int
+	UnknownCount int
+	VideoSize    int
+	PhotoSize    int
+	RawSize      int
+	UnknownSize  int
+	FreeSpace    uint64
 }
 
 /*
@@ -129,17 +129,17 @@ func GatherFacts(library *MediaList) (*Facts, error) {
 	bail(err)
 
 	return &Facts{
-		count:        library.Size(),
-		size:         size,
-		videoCount:   videoCount,
-		photoCount:   photoCount,
-		rawCount:     rawCount,
-		unknownCount: unknownCount,
-		videoSize:    videoSize,
-		photoSize:    photoSize,
-		rawSize:      rawSize,
-		unknownSize:  unknownSize,
-		freeSpace:    freeSpace,
+		Count:        library.Size(),
+		Size:         size,
+		VideoCount:   videoCount,
+		PhotoCount:   photoCount,
+		RawCount:     rawCount,
+		UnknownCount: unknownCount,
+		VideoSize:    videoSize,
+		PhotoSize:    photoSize,
+		RawSize:      rawSize,
+		UnknownSize:  unknownSize,
+		FreeSpace:    freeSpace,
 	}, nil
 }
 
@@ -147,16 +147,16 @@ func GatherFacts(library *MediaList) (*Facts, error) {
  * Ask whether the user wants to proceed with a copy
  */
 func PromptCopy(clusters *MediaCluster, facts *Facts, opts *BadgerOpts) (bool, error) {
-	if facts.freeSpace < uint64(facts.size) {
-		return false, fmt.Errorf("not enough free-space under / to copy files: %v vs %v bytes", facts.freeSpace, facts.size)
+	if facts.FreeSpace < uint64(facts.Size) {
+		return false, fmt.Errorf("not enough free-space under / to copy files: %v vs %v bytes", facts.FreeSpace, facts.Size)
 	}
 
-	freeAfterMb := (facts.freeSpace - uint64(facts.size)) / 1e9
+	freeAfterMb := (facts.FreeSpace - uint64(facts.Size)) / 1e9
 
-	message := ("Badger 🦡\n\n" + fmt.Sprint(facts.count) + " media files (" + fmt.Sprint(facts.size/1.0e9) + " gigabytes)\n" +
-		fmt.Sprint(facts.photoCount) + " photos (" + fmt.Sprint(facts.photoSize/1.0e9) + " gigabytes)\n" +
-		fmt.Sprint(facts.rawCount) + " raw images (" + fmt.Sprint(facts.rawSize/1.0e9) + " gigabytes)\n" +
-		fmt.Sprint(facts.videoCount) + " videos (" + fmt.Sprint(facts.videoSize/1.0e9) + " gigabytes)\n\n" +
+	message := ("Badger 🦡\n\n" + fmt.Sprint(facts.Count) + " media files (" + fmt.Sprint(facts.Size/1.0e9) + " gigabytes)\n" +
+		fmt.Sprint(facts.PhotoCount) + " photos (" + fmt.Sprint(facts.PhotoSize/1.0e9) + " gigabytes)\n" +
+		fmt.Sprint(facts.RawCount) + " raw images (" + fmt.Sprint(facts.RawSize/1.0e9) + " gigabytes)\n" +
+		fmt.Sprint(facts.VideoCount) + " videos (" + fmt.Sprint(facts.VideoSize/1.0e9) + " gigabytes)\n\n" +
 		"Badger will group this media into " + fmt.Sprint(clusters.ClusterSize()) + " cluster-folders.\n" +
 		"there will be " + fmt.Sprint(freeAfterMb) + " gigabytes free after copying")
 

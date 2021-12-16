@@ -228,7 +228,7 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 	COPY_PROCS := 10
 	BLUR_PROCS := runtime.NumCPU() - 1
 
-	bar := NewProgressBar(int64(facts.size))
+	bar := NewProgressBar(int64(facts.Size), facts)
 	copyJobs := make(chan Either[Media], len(clusters.entries))
 	defer close(copyJobs)
 

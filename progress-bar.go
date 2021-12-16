@@ -10,11 +10,15 @@ import (
 )
 
 type ProgressBar struct {
-	count     int64
-	completed int64
-	lock      sync.Mutex
-	start     time.Time
-	last      time.Time
+	count      int64
+	completed  int64
+	lock       sync.Mutex
+	start      time.Time
+	last       time.Time
+	facts      *Facts
+	photoCount int
+	rawCount   int
+	videoCount int
 }
 
 type ProgressView struct {
@@ -25,24 +29,32 @@ type ProgressView struct {
 	RemainingMB int
 	Src         string
 	Dst         string
+	Facts       Facts
+	Count       int
+	PhotoCount  int
+	RawCount    int
+	VideoCount  int
 }
 
 const ProgressBarTemplate = `
 🦡
-Clustered & Copied {{.Percentage}}% MB @ {{.RateMB}}MB/s
+Clustered & Copied {{.Percentage}}% Media @ {{.RateMB}}MB/s
 
-{{.Src}} -> {{.Dst}}
+Copied {{.Src}} -> {{.Dst}}
 
-Copied:    {{.CopiedMB}}MB
-Total:     {{.TotalMB}}MB
-Remaining: {{.RemainingMB}}MB
+Copied:      {{.CopiedMB}}MB
+Total:       {{.TotalMB}}MB
+Remaining:   {{.RemainingMB}}MB
 
+Photos:      {{.PhotoCount}} / {{.Facts.PhotoCount}}
+Raw Images:  {{.RawCount}} / {{.Facts.RawCount}}
+Videos:      {{.VideoCount}} / {{.Facts.VideoCount}}
 `
 
 /*
  * Construct a progress-bar
  */
-func NewProgressBar(count int64) *ProgressBar {
+func NewProgressBar(count int64, facts *Facts) *ProgressBar {
 	return &ProgressBar{
 		count:     count,
 		completed: 0,
@@ -50,6 +62,7 @@ func NewProgressBar(count int64) *ProgressBar {
 		lock:  sync.Mutex{},
 		start: time.Now(),
 		last:  time.Now(),
+		facts: facts,
 	}
 }
 
@@ -63,6 +76,15 @@ func (bar *ProgressBar) Render(media *Media) {
 	total := bar.count / 1e6
 	remaining := (bar.count - bar.completed) / 1e6
 
+	switch media.GetType() {
+	case PHOTO:
+		bar.photoCount++
+	case RAW:
+		bar.rawCount++
+	case VIDEO:
+		bar.videoCount++
+	}
+
 	view := ProgressView{
 		Percentage:  math.Round(pct*100) / 100,
 		RateMB:      0,
@@ -71,6 +93,11 @@ func (bar *ProgressBar) Render(media *Media) {
 		RemainingMB: int(remaining),
 		Src:         media.source,
 		Dst:         media.GetChosenName(float64(media.blur)),
+		Facts:       *bar.facts,
+		Count:       int(bar.count),
+		PhotoCount:  bar.photoCount,
+		RawCount:    bar.rawCount,
+		VideoCount:  bar.videoCount,
 	}
 	tmpl, err := template.New("progress-bar").Parse(ProgressBarTemplate)
 
