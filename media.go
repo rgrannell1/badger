@@ -21,6 +21,7 @@ type Media struct {
 	mtime     int
 	clusterId int
 	id        int
+	copied    bool
 }
 
 type MediaType int

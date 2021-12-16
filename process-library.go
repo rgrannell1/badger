@@ -111,7 +111,8 @@ func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
 				blurPath := media.GetChosenName(float64(media.blur))
 
 				// if the destination exists, continue and update bar
-				if _, err := os.Stat(blurPath); errors.Is(err, os.ErrNotExist) {
+				if _, err := os.Stat(blurPath); !errors.Is(err, os.ErrNotExist) {
+					media.copied = true
 					results <- Either[Media]{media, nil}
 					continue
 				}
@@ -141,15 +142,17 @@ func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
 				// copied; close the destination file
 				err = dest.Close()
 
+
 				if err != nil {
 					results <- Either[Media]{media, err}
 					continue
 				}
 
+				media.copied = true
+
 				// all good!
 				results <- Either[Media]{media, nil}
 			}
-
 		}()
 	}
 
@@ -242,10 +245,15 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 
 	// range over copied file results
 	for copyRes := range CopyFiles(COPY_PROCS, copyJobs) {
-		if copyRes.Error != nil {
-			return copyRes.Error
+		err := copyRes.Error
+		media := copyRes.Media
+
+		if err != nil {
+			return err
+		} else if !media.copied {
+			panic("bailed!")
 		} else {
-			bar.Update(&copyRes.Media)
+			bar.Update(&media)
 		}
 	}
 
