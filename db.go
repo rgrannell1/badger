@@ -63,10 +63,15 @@ func (conn *BadgerDb) InsertMedia(media *Media) error {
 	aperture := ""
 	shutterSpeed := ""
 
-	if media.exifData != nil {
-		iso = media.exifData.Iso
-		aperture = media.exifData.Aperture
-		shutterSpeed = media.exifData.ShutterSpeed
+	info, err := media.GetInformation()
+	if err != nil {
+		return err
+	}
+
+	if info != nil {
+		iso = info.Iso
+		aperture = info.Aperture
+		shutterSpeed = info.ShutterSpeed
 	}
 
 	_, err = tx.Exec(`
@@ -107,6 +112,33 @@ func (conn *BadgerDb) InsertMedia(media *Media) error {
 	return nil
 }
 
-func (conn *BadgerDb) GetMedia(media *Media) error {
-	return nil
+type GetMediaRow struct {
+	src  string
+	dst  string
+	hash string
+	blur int
+}
+
+/*
+ * Get media by source
+ */
+func (conn *BadgerDb) GetMedia(media *Media) (*GetMediaRow, error) {
+	tx, err := conn.db.Begin()
+	store := GetMediaRow{}
+
+	if err != nil {
+		return &GetMediaRow{}, err
+	}
+	defer tx.Rollback()
+
+	result := conn.db.QueryRow(`SELECT * FROM mediaData WHERE src = ?`, media.source)
+
+	switch err := result.Scan(&store.src, &store.dst, &store.hash, &store.blur); err {
+	case sql.ErrNoRows:
+		return &store, nil
+	case nil:
+		return &store, nil
+	}
+
+	return &store, nil
 }

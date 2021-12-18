@@ -226,7 +226,9 @@ func (media *Media) GetInformation() (*PhotoInformation, error) {
 	}
 
 	// attempt to extract and store exif information
-	var fstop, iso, shutter string
+	fstop := ""
+	iso := ""
+	shutter := ""
 
 	fstopTag, err := metaData.Get(exif.FocalLength)
 	if err == nil {
