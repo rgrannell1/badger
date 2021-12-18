@@ -92,7 +92,7 @@ func (bar *ProgressBar) Render(media *Media) {
 		TotalMB:     int(total),
 		RemainingMB: int(remaining),
 		Src:         media.source,
-		Dst:         media.GetChosenName(float64(media.blur)),
+		Dst:         media.GetChosenName(),
 		Facts:       *bar.facts,
 		Count:       int(bar.count),
 		PhotoCount:  bar.photoCount,

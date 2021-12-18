@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 /*
@@ -69,7 +70,7 @@ func (store *BlurStore) GetStoredBlur(media *Media) float64 {
 /*
  * Copy files and emit error|media sumtypes to the output channel
  */
-func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
+func CopyFiles(procCount int, db *BadgerDb, copyChan chan Either[Media]) chan Either[Media] {
 	results := make(chan Either[Media], procCount)
 
 	// start several goroutines that write to results
@@ -77,10 +78,16 @@ func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
 		go func() {
 			// enumerate over copy-chan; first to grab will win
 			for pair := range copyChan {
-				media := pair.Media
+				media := pair.Value
 				err := pair.Error
 
 				// pipeline any existing errors
+				if err != nil {
+					results <- Either[Media]{media, err}
+					continue
+				}
+
+				err = media.LoadInformation()
 				if err != nil {
 					results <- Either[Media]{media, err}
 					continue
@@ -108,7 +115,7 @@ func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
 				}
 
 				// blur will be present in pipeline
-				blurPath := media.GetChosenName(float64(media.blur))
+				blurPath := media.GetChosenName()
 
 				// if the destination exists, continue and update bar
 				if _, err := os.Stat(blurPath); !errors.Is(err, os.ErrNotExist) {
@@ -150,7 +157,12 @@ func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
 
 				media.copied = true
 
-				// all good!
+        err = db.InsertMedia(&media)
+				if err != nil {
+					results <- Either[Media]{media, err}
+					continue
+				}
+
 				results <- Either[Media]{media, nil}
 			}
 		}()
@@ -162,7 +174,7 @@ func CopyFiles(procCount int, copyChan chan Either[Media]) chan Either[Media] {
 /*
  * Calculate the blur for each image, and start copy-jobs afterwards
  */
-func CalcuateBlur(procCount int, library *MediaList, clusters *MediaCluster) chan Either[Media] {
+func CalcuateBlur(procCount int, db *BadgerDb, library *MediaList, clusters *MediaCluster) chan Either[Media] {
 	results := make(chan Either[Media], len(clusters.entries))
 
 	// a local channel, to distibute media input over
@@ -215,7 +227,7 @@ func CalcuateBlur(procCount int, library *MediaList, clusters *MediaCluster) cha
 }
 
 type Either[T any] struct {
-	Media T
+	Value T
 	Error error
 }
 
@@ -229,25 +241,39 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 		return err
 	}
 
+	conn, err := NewSqliteDB(opts)
+
+	if err != nil {
+		return err
+	}
+
+  db := BadgerDb{conn}
+	err = db.CreateTables()
+
+	if err != nil {
+		return err
+	}
+
 	COPY_PROCS := 10
 	BLUR_PROCS := runtime.NumCPU() - 1
 
 	bar := NewProgressBar(int64(facts.Size), facts)
+
 	copyJobs := make(chan Either[Media], len(clusters.entries))
 	defer close(copyJobs)
 
 	// iterate over media, and either write directly to copyjobs (video, etc) or calculate blur and then
 	// write to blur-jobs. Start this before starting copy-job so it's set up to receive
 	go func() {
-		for blurRes := range CalcuateBlur(BLUR_PROCS, library, clusters) {
+		for blurRes := range CalcuateBlur(BLUR_PROCS, &db, library, clusters) {
 			copyJobs <- blurRes
 		}
 	}()
 
 	// range over copied file results
-	for copyRes := range CopyFiles(COPY_PROCS, copyJobs) {
+	for copyRes := range CopyFiles(COPY_PROCS, &db, copyJobs) {
 		err := copyRes.Error
-		media := copyRes.Media
+		media := copyRes.Value
 
 		if err != nil {
 			return err
@@ -255,8 +281,13 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 			panic("bailed!")
 		} else {
 			bar.Update(&media)
+
+			if err := db.InsertMedia(&media); err != nil {
+				return err
+			}
 		}
 	}
+
 
 	return nil
 }

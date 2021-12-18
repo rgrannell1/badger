@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path"
@@ -22,6 +25,8 @@ type Media struct {
 	clusterId int
 	id        int
 	copied    bool
+	exifData  *PhotoInformation
+	hash      string
 }
 
 type MediaType int
@@ -32,6 +37,23 @@ const (
 	VIDEO
 	UNKNOWN
 )
+
+// cache mtime, information about media type
+func (media *Media) LoadInformation() error {
+	// memoised
+	media.GetMtime()
+	_, err := media.GetHash()
+	if err != nil {
+		return err
+	}
+
+	_, err = media.GetInformation()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func (media *Media) GetType() MediaType {
 	ext := strings.ToLower(media.GetExt())
@@ -56,7 +78,9 @@ func (media *Media) GetExt() string {
 	return path.Ext(media.source)
 }
 
-func (media *Media) GetChosenName(blur float64) string {
+func (media *Media) GetChosenName() string {
+	blur := media.blur
+
 	fpath := ""
 	if blur == -1 {
 		fpath = media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(media.id) + media.GetExt()
@@ -68,6 +92,10 @@ func (media *Media) GetChosenName(blur float64) string {
 }
 
 func (media *Media) GetBlur() (float64, error) {
+	if media.blur > 0 {
+		return float64(media.blur), nil
+	}
+
 	img, err := imgio.ImreadGray(media.source)
 
 	if err != nil {
@@ -121,11 +149,11 @@ func (media *Media) Size() (int64, error) {
 
 // Get a media file's mtime
 func (media *Media) GetMtime() int {
-	stat, err := os.Stat(media.source)
-
 	if media.mtime > 0 {
 		return media.mtime
 	}
+
+	stat, err := os.Stat(media.source)
 
 	if err != nil {
 		return 1
@@ -138,6 +166,8 @@ func (media *Media) GetMtime() int {
 
 func (media *Media) GetExifCreateTime() (int, error) {
 	conn, err := os.Open(media.source)
+	defer conn.Close()
+
 	if err != nil {
 		return 0, err
 	}
@@ -165,4 +195,87 @@ func (media *Media) GetCreationTime() int {
 	} else {
 		return ctime
 	}
+}
+
+type PhotoInformation struct {
+	Iso          string
+	Aperture     string
+	ShutterSpeed string
+}
+
+func (media *Media) GetInformation() (*PhotoInformation, error) {
+	if media.exifData != nil {
+		return media.exifData, nil
+	}
+
+	if media.GetType() != PHOTO {
+		return &PhotoInformation{}, nil
+	}
+
+	conn, err := os.Open(media.source)
+	defer conn.Close()
+
+	if err != nil {
+		return &PhotoInformation{}, err
+	}
+
+	metaData, err := exif.Decode(conn)
+
+	if err != nil {
+		return &PhotoInformation{}, err
+	}
+
+	// attempt to extract and store exif information
+	var fstop, iso, shutter string
+
+	fstopTag, err := metaData.Get(exif.FocalLength)
+	if err == nil {
+		fstop, _ = fstopTag.StringVal()
+	}
+
+	isoTag, err := metaData.Get(exif.ISOSpeedRatings)
+	if err == nil {
+		iso, _ = isoTag.StringVal()
+	}
+
+	shutterTag, err := metaData.Get(exif.ShutterSpeedValue)
+	if err == nil {
+		shutter, _ = shutterTag.StringVal()
+	}
+
+	info := PhotoInformation{
+		Iso:          iso,
+		Aperture:     fstop,
+		ShutterSpeed: shutter,
+	}
+
+	media.exifData = &info
+
+	return &info, nil
+}
+
+/*
+ * Get and cache a file hash
+ */
+func (media *Media) GetHash() (string, error) {
+	if len(media.hash) > 0 {
+		return media.hash, nil
+	}
+
+	file, err := os.Open(media.source)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	hashSum := hex.EncodeToString(hash.Sum(nil))
+
+	media.hash = hashSum
+
+	return hashSum, nil
 }
