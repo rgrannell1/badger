@@ -9,6 +9,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type Either[T any] struct {
+	Value T
+	Error error
+}
+
 /*
  * Get free-space in the target hard-drive
  */

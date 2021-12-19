@@ -77,7 +77,6 @@ func CopyFiles(procCount int, db *BadgerDb, copyChan chan Either[Media]) chan Ei
 
 				exists, err := media.DestinationExists()
 				if exists {
-					// TODO check hash too!
 					media.copied = true
 					results <- Either[Media]{media, nil}
 					continue
@@ -228,11 +227,6 @@ func CalcuateBlur(procCount int, db *BadgerDb, library *MediaList, clusters *Med
 	return results
 }
 
-type Either[T any] struct {
-	Value T
-	Error error
-}
-
 /*
  * Compute blur, and copy files across
  */
@@ -250,30 +244,30 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 	}
 
   db := BadgerDb{conn}
+	defer db.db.Close()
 	err = db.CreateTables()
 
 	if err != nil {
 		return err
 	}
 
-	COPY_PROCS := 10
-	BLUR_PROCS := runtime.NumCPU() - 1
-
 	bar := NewProgressBar(int64(facts.Size), facts)
 
 	copyJobs := make(chan Either[Media], len(clusters.entries))
-	defer close(copyJobs)
 
 	// iterate over media, and either write directly to copyjobs (video, etc) or calculate blur and then
 	// write to blur-jobs. Start this before starting copy-job so it's set up to receive
 	go func() {
-		for blurRes := range CalcuateBlur(BLUR_PROCS, &db, library, clusters) {
+		for blurRes := range CalcuateBlur(opts.blurWorkers, &db, library, clusters) {
 			copyJobs <- blurRes
 		}
+
+		// close copyJobs after all jobs sent. CopyJobs is buffered.
+		close(copyJobs)
 	}()
 
 	// range over copied file results
-	for copyRes := range CopyFiles(COPY_PROCS, &db, copyJobs) {
+	for copyRes := range CopyFiles(opts.copyWorkers, &db, copyJobs) {
 		err := copyRes.Error
 		media := copyRes.Value
 
@@ -289,7 +283,6 @@ func ProcessLibrary(opts *BadgerOpts, clusters *MediaCluster, facts *Facts, libr
 			}
 		}
 	}
-
 
 	return nil
 }

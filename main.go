@@ -3,10 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"runtime"
 
 	tm "github.com/buger/goterm"
 	"github.com/docopt/docopt-go"
+	"github.com/google/gops/agent"
 	"github.com/manifoldco/promptui"
 )
 
@@ -58,6 +61,8 @@ type BadgerOpts struct {
 	maxSecondsDiff float64
 	minPoints      int
 	yes            bool
+	copyWorkers    int
+	blurWorkers    int
 }
 
 // Facts about the media-library, like size and count
@@ -235,6 +240,10 @@ func ValidateOpts(opts *BadgerOpts) error {
  * Start of the application
  */
 func main() {
+	if err := agent.Listen(agent.Options{}); err != nil {
+		log.Fatal(err)
+	}
+
 	opts, err := docopt.ParseDoc(Usage)
 	bail(err)
 
@@ -255,6 +264,8 @@ func main() {
 			to:             to,
 			maxSecondsDiff: maxSecondsDiff,
 			yes:            yes,
+			copyWorkers:    10,
+			blurWorkers:    runtime.NumCPU() - 1,
 		}
 
 		err = ValidateOpts(&bopts)
