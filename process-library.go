@@ -75,6 +75,14 @@ func CopyFiles(procCount int, db *BadgerDb, copyChan chan Either[Media]) chan Ei
 					continue
 				}
 
+				exists, err := media.DestinationExists()
+				if exists {
+					// TODO check hash too!
+					media.copied = true
+					results <- Either[Media]{media, nil}
+					continue
+				}
+
 				err = media.LoadInformation()
 				if err != nil {
 					results <- Either[Media]{media, err}
@@ -104,13 +112,6 @@ func CopyFiles(procCount int, db *BadgerDb, copyChan chan Either[Media]) chan Ei
 
 				// blur will be present in pipeline
 				blurPath := media.GetChosenName()
-
-				// if the destination exists, continue and update bar
-				if _, err := os.Stat(blurPath); !errors.Is(err, os.ErrNotExist) {
-					media.copied = true
-					results <- Either[Media]{media, nil}
-					continue
-				}
 
 				dest, err := os.Create(blurPath)
 

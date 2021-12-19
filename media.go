@@ -1,10 +1,8 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
+	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"path"
@@ -89,6 +87,28 @@ func (media *Media) GetChosenName() string {
 	}
 
 	return fpath
+}
+
+/*
+ * Check whether the destination file exists
+ */
+func (media *Media) DestinationExists() (bool, error) {
+	dest := media.GetChosenName()
+	_, err := os.Stat(dest)
+
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		} else {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (media *Media) DestinationHash() (string, error) {
+	return GetHash(media.GetChosenName())
 }
 
 func (media *Media) GetBlur() (float64, error) {
@@ -264,18 +284,10 @@ func (media *Media) GetHash() (string, error) {
 		return media.hash, nil
 	}
 
-	file, err := os.Open(media.source)
+	hashSum, err := GetHash(media.source)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
-
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-
-	hashSum := hex.EncodeToString(hash.Sum(nil))
 
 	media.hash = hashSum
 
