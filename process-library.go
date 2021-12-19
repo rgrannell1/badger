@@ -6,8 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
-	"sync"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -27,6 +25,9 @@ func (clust *MediaCluster) MakeClusterDirs(dst string) error {
 	return nil
 }
 
+/*
+ * Make each cluster folder
+ */
 func MakeFolders(to string, clusters int) error {
 	for idx := 0; idx < clusters; idx++ {
 		cluster_dir := filepath.Join(to, fmt.Sprint(idx))
@@ -38,21 +39,6 @@ func MakeFolders(to string, clusters int) error {
 	}
 
 	return nil
-}
-
-type BlurStore struct {
-	data sync.Map
-}
-
-func (store *BlurStore) GetStoredBlur(media *Media) float64 {
-	prefix := media.GetPrefix()
-	val, ok := store.data.Load(prefix)
-
-	if !ok {
-		return -1
-	} else {
-		return val.(float64)
-	}
 }
 
 /*
@@ -110,7 +96,7 @@ func CopyFiles(procCount int, db *BadgerDb, copyChan chan Either[Media]) chan Ei
 				}
 
 				// blur will be present in pipeline
-				blurPath := media.GetChosenName()
+				blurPath := media.GetDestinationPath()
 
 				dest, err := os.Create(blurPath)
 
@@ -136,7 +122,6 @@ func CopyFiles(procCount int, db *BadgerDb, copyChan chan Either[Media]) chan Ei
 
 				// copied; close the destination file
 				err = dest.Close()
-
 
 				if err != nil {
 					results <- Either[Media]{media, err}

@@ -89,7 +89,7 @@ func (conn *BadgerDb) InsertMedia(media *Media) error {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		media.source,
-		media.GetChosenName(),
+		media.GetDestinationPath(),
 		media.hash,
 		media.id,
 		media.clusterId,

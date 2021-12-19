@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 
@@ -240,8 +239,12 @@ func ValidateOpts(opts *BadgerOpts) error {
  * Start of the application
  */
 func main() {
-	if err := agent.Listen(agent.Options{}); err != nil {
-		log.Fatal(err)
+	badgerDebug := os.Getenv("BADGER_DEBUG")
+
+	if len(badgerDebug) > 0 && badgerDebug == "true" {
+		if err := agent.Listen(agent.Options{}); err != nil {
+			bail(err)
+		}
 	}
 
 	opts, err := docopt.ParseDoc(Usage)

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	ed "github.com/Ernyoke/Imger/edgedetection"
@@ -27,13 +28,13 @@ type Media struct {
 	hash      string
 }
 
-type MediaType int
+type MediaType string
 
 const (
-	PHOTO MediaType = iota
-	RAW
-	VIDEO
-	UNKNOWN
+	PHOTO   MediaType = "photo"
+	RAW               = "raw"
+	VIDEO             = "video"
+	UNKNOWN           = "unknown"
 )
 
 // cache mtime, information about media type
@@ -53,6 +54,9 @@ func (media *Media) LoadInformation() error {
 	return nil
 }
 
+/*
+ * Get the media type based on file-extensions
+ */
 func (media *Media) GetType() MediaType {
 	ext := strings.ToLower(media.GetExt())
 
@@ -76,24 +80,29 @@ func (media *Media) GetExt() string {
 	return path.Ext(media.source)
 }
 
-func (media *Media) GetChosenName() string {
+/*
+ * Get the target filename for the copied media
+ */
+func (media *Media) GetDestinationPath() string {
 	blur := media.blur
 
-	fpath := ""
+	name := ""
+	root := filepath.Join(media.dstDir, fmt.Sprint(media.clusterId))
+
 	if blur == -1 {
-		fpath = media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(media.id) + media.GetExt()
+		name = fmt.Sprint(media.id) + media.GetExt()
 	} else {
-		fpath = media.dstDir + "/" + fmt.Sprint(media.clusterId) + "/" + fmt.Sprint(blur) + "_" + fmt.Sprint(media.id) + media.GetExt()
+		name = fmt.Sprint(blur) + "_" + fmt.Sprint(media.id) + media.GetExt()
 	}
 
-	return fpath
+	return filepath.Join(root, name)
 }
 
 /*
  * Check whether the destination file exists
  */
 func (media *Media) DestinationExists() (bool, error) {
-	dest := media.GetChosenName()
+	dest := media.GetDestinationPath()
 	_, err := os.Stat(dest)
 
 	if err != nil {
@@ -108,46 +117,7 @@ func (media *Media) DestinationExists() (bool, error) {
 }
 
 func (media *Media) DestinationHash() (string, error) {
-	return GetHash(media.GetChosenName())
-}
-
-func (media *Media) GetBlur() (float64, error) {
-	if media.blur > 0 {
-		return float64(media.blur), nil
-	}
-
-	img, err := imgio.ImreadGray(media.source)
-
-	if err != nil {
-		panic(err)
-	}
-
-	laplacian, err := ed.LaplacianGray(img, padding.BorderConstant, ed.K4)
-	if err != nil {
-		return 0, err
-	}
-
-	pixSum := 0.0
-	for _, pix := range laplacian.Pix {
-		pixSum += float64(pix)
-	}
-
-	mean := pixSum / float64(len(laplacian.Pix))
-
-	diffs := make([]float64, len(laplacian.Pix))
-
-	for idx, pix := range laplacian.Pix {
-		diffs[idx] = math.Pow(float64(pix)-mean, 2)
-	}
-
-	variance := 0.0
-	for _, diff := range diffs {
-		variance += float64(diff)
-	}
-
-	variance = variance / float64(len(laplacian.Pix))
-
-	return math.Ceil(variance * 10), nil
+	return GetHash(media.GetDestinationPath())
 }
 
 func (media *Media) Size() (int64, error) {
@@ -292,4 +262,43 @@ func (media *Media) GetHash() (string, error) {
 	media.hash = hashSum
 
 	return hashSum, nil
+}
+
+func (media *Media) GetBlur() (float64, error) {
+	if media.blur > 0 {
+		return float64(media.blur), nil
+	}
+
+	img, err := imgio.ImreadGray(media.source)
+
+	if err != nil {
+		panic(err)
+	}
+
+	laplacian, err := ed.LaplacianGray(img, padding.BorderConstant, ed.K4)
+	if err != nil {
+		return 0, err
+	}
+
+	pixSum := 0.0
+	for _, pix := range laplacian.Pix {
+		pixSum += float64(pix)
+	}
+
+	mean := pixSum / float64(len(laplacian.Pix))
+
+	diffs := make([]float64, len(laplacian.Pix))
+
+	for idx, pix := range laplacian.Pix {
+		diffs[idx] = math.Pow(float64(pix)-mean, 2)
+	}
+
+	variance := 0.0
+	for _, diff := range diffs {
+		variance += float64(diff)
+	}
+
+	variance = variance / float64(len(laplacian.Pix))
+
+	return math.Ceil(variance * 10), nil
 }
