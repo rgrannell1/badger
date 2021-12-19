@@ -151,9 +151,10 @@ func GatherFacts(library *MediaList) (*Facts, error) {
  * Ask whether the user wants to proceed with a copy
  */
 func PromptCopy(clusters *MediaCluster, facts *Facts, opts *BadgerOpts) (bool, error) {
-	if facts.FreeSpace < uint64(facts.Size) {
-		return false, fmt.Errorf("not enough free-space under / to copy files: %v vs %v bytes", facts.FreeSpace, facts.Size)
-	}
+	// TODO
+	//if facts.FreeSpace < uint64(facts.Size) {
+	//	return false, fmt.Errorf("not enough free-space under / to copy files: %v vs %v bytes", facts.FreeSpace, facts.Size)
+	//}
 
 	freeAfterMb := (facts.FreeSpace - uint64(facts.Size)) / 1e9
 

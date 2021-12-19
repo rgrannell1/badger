@@ -202,6 +202,7 @@ func CalcuateBlur(procCount int, db *BadgerDb, library *MediaList, clusters *Med
 					results <- Either[Media]{*shared, nil}
 				}
 			}
+
 		}(pid)
 	}
 

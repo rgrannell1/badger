@@ -19,6 +19,7 @@ type ProgressBar struct {
 	photoCount int
 	rawCount   int
 	videoCount int
+	template   *template.Template
 }
 
 type ProgressView struct {
@@ -55,14 +56,21 @@ Videos:      {{.VideoCount}} / {{.Facts.VideoCount}}
  * Construct a progress-bar
  */
 func NewProgressBar(count int64, facts *Facts) *ProgressBar {
+	tmpl, err := template.New("progress-bar").Parse(ProgressBarTemplate)
+
+	if err != nil {
+		panic(err)
+	}
+
 	return &ProgressBar{
 		count:     count,
 		completed: 0,
 
-		lock:  sync.Mutex{},
-		start: time.Now(),
-		last:  time.Now(),
-		facts: facts,
+		lock:     sync.Mutex{},
+		start:    time.Now(),
+		last:     time.Now(),
+		facts:    facts,
+		template: tmpl,
 	}
 }
 
@@ -99,14 +107,9 @@ func (bar *ProgressBar) Render(media *Media) {
 		RawCount:    bar.rawCount,
 		VideoCount:  bar.videoCount,
 	}
-	tmpl, err := template.New("progress-bar").Parse(ProgressBarTemplate)
-
-	if err != nil {
-		panic(err)
-	}
 
 	fmt.Print("\033[H\033[2J")
-	err = tmpl.Execute(os.Stdout, view)
+	err := bar.template.Execute(os.Stdout, view)
 	if err != nil {
 		panic(err)
 	}

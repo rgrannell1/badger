@@ -16,4 +16,5 @@ require (
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/google/gops v0.3.22
 	github.com/mattn/go-sqlite3 v1.14.9 // indirect
+	github.com/rivo/tview v0.0.0-20211202162923-2a6de950f73b // indirect
 )
