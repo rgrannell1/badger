@@ -7,7 +7,12 @@ badger is a tool that helps you filter large folders of photos. It:
 - Copies media into a directory, with photos / video clustered together by the time they were taken
 - Updates photo names with an estimate of how blurry they are, so you can sort from likey sharpest to blurriest within a burst of photos.
 - Flattens the final selection of media (after you delete what you don't want to keep) into a folder ready to upload.
+
+It has a few niceties:
+
+- Detailed progress statistics
 - Concurrent & database-based to minimise processing time
+- Groups raw images alongside matching jpeg images when present
 
 ## Usage
 
