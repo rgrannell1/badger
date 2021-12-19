@@ -44,18 +44,6 @@ type BlurStore struct {
 	data sync.Map
 }
 
-func (store *BlurStore) SaveBlur(media *Media) (float64, error) {
-	prefix := media.GetPrefix()
-	blur, err := media.GetBlur()
-
-	if err != nil {
-		return 0, err
-	}
-
-	store.data.Store(prefix, blur)
-	return blur, nil
-}
-
 func (store *BlurStore) GetStoredBlur(media *Media) float64 {
 	prefix := media.GetPrefix()
 	val, ok := store.data.Load(prefix)
@@ -199,12 +187,25 @@ func CalcuateBlur(procCount int, db *BadgerDb, library *MediaList, clusters *Med
 					continue
 				}
 
-				// get & set blur
-				blur, err := media.GetBlur()
+        row, err := db.GetMedia(&media)
 				if err != nil {
 					results <- Either[Media]{media, err}
 					continue
 				}
+
+        blur := row.blur
+
+				// skip blur calculation if it's already stored
+				if row.blur <= 0 {
+					tmp, err := media.GetBlur()
+					blur = int(tmp)
+
+					if err != nil {
+						results <- Either[Media]{media, err}
+						continue
+					}
+				}
+
 				media.blur = int(blur)
 
 				// look up files with the same prefix, copy blur and prefix

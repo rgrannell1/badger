@@ -131,7 +131,7 @@ func (conn *BadgerDb) GetMedia(media *Media) (*GetMediaRow, error) {
 	}
 	defer tx.Rollback()
 
-	result := conn.db.QueryRow(`SELECT * FROM mediaData WHERE src = ?`, media.source)
+	result := conn.db.QueryRow(`SELECT src, dst, hash, blur FROM mediaData WHERE src = ?`, media.source)
 
 	switch err := result.Scan(&store.src, &store.dst, &store.hash, &store.blur); err {
 	case sql.ErrNoRows:
