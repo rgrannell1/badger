@@ -4,11 +4,18 @@ import (
 	"bitbucket.org/sjbog/go-dbscan"
 )
 
+/**
+ *
+ */
 type MediaCluster struct {
 	clusters int
 	entries  []Media
 }
 
+/**
+ * Return the number of clusters to be created by DBSCAN
+ *
+ */
 func (clusters *MediaCluster) ClusterSize() int {
 	return clusters.clusters
 }
@@ -23,6 +30,7 @@ func ClusterMedia(epsilon float64, minPoints int, library *MediaList) *MediaClus
 	clusterer.AutoSelectDimension = false
 	clusterer.SortDimensionIndex = 0
 
+	// create a clusterable data-array
 	var data = make([]dbscan.ClusterablePoint, library.Size())
 	var mediaDict = make(map[string]Media)
 
@@ -37,7 +45,7 @@ func ClusterMedia(epsilon float64, minPoints int, library *MediaList) *MediaClus
 		}
 	}
 
-	// cluster, and restructure the data for use later
+	// cluster the media, and restructure the data for use later
 	clusters := clusterer.Cluster(data)
 	labelledMedia := make([]Media, 0)
 
@@ -45,6 +53,7 @@ func ClusterMedia(epsilon float64, minPoints int, library *MediaList) *MediaClus
 		clusterList := make([]Media, len(cluster))
 
 		for idx, point := range cluster {
+			// associate the media with a cluster ID in a flat list
 			fpath := point.(*dbscan.NamedPoint).Name
 			media := mediaDict[fpath]
 			media.clusterId = clusterId
@@ -55,12 +64,16 @@ func ClusterMedia(epsilon float64, minPoints int, library *MediaList) *MediaClus
 		labelledMedia = append(labelledMedia, clusterList...)
 	}
 
+	// return number of clusters, and the clustered media-entries
 	return &MediaCluster{
 		clusters: len(clusters),
 		entries:  labelledMedia,
 	}
 }
 
+/**
+ *
+ */
 func (cluster *MediaCluster) GetByPrefix(media *Media) []*Media {
 	prefix := media.GetPrefix()
 

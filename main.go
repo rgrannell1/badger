@@ -129,7 +129,7 @@ func GatherFacts(library *MediaList) (*Facts, error) {
 		}
 	}
 
-	freeSpace, err := GetFreeSpace()
+	freeSpace, err := GetFreeSpace("/home/rg")
 	bail(err)
 
 	return &Facts{
@@ -151,17 +151,21 @@ func GatherFacts(library *MediaList) (*Facts, error) {
  * Ask whether the user wants to proceed with a copy
  */
 func PromptCopy(clusters *MediaCluster, facts *Facts, opts *BadgerOpts) (bool, error) {
-	// TODO
-	//if facts.FreeSpace < uint64(facts.Size) {
-	//	return false, fmt.Errorf("not enough free-space under / to copy files: %v vs %v bytes", facts.FreeSpace, facts.Size)
-	//}
+	if facts.FreeSpace < uint64(facts.Size) {
+		return false, fmt.Errorf("not enough free-space under / to copy files: %v vs %v bytes", facts.FreeSpace, facts.Size)
+	}
 
-	freeAfterMb := (facts.FreeSpace - uint64(facts.Size)) / 1e9
+	freeAfterMb := fmt.Sprintf("%.2f", float64(facts.FreeSpace-uint64(facts.Size))/1e9)
 
-	message := ("Badger 🦡\n\n" + fmt.Sprint(facts.Count) + " media files (" + fmt.Sprint(facts.Size/1.0e9) + " gigabytes)\n" +
-		fmt.Sprint(facts.PhotoCount) + " photos (" + fmt.Sprint(facts.PhotoSize/1.0e9) + " gigabytes)\n" +
-		fmt.Sprint(facts.RawCount) + " raw images (" + fmt.Sprint(facts.RawSize/1.0e9) + " gigabytes)\n" +
-		fmt.Sprint(facts.VideoCount) + " videos (" + fmt.Sprint(facts.VideoSize/1.0e9) + " gigabytes)\n\n" +
+	totalSizeSummary := fmt.Sprintf("%.2f", float64(facts.Size)/1.0e9)
+	photosSizeSummary := fmt.Sprintf("%.2f", float64(facts.PhotoSize)/1.0e9)
+	rawSizeSummary := fmt.Sprintf("%.2f", float64(facts.RawSize)/1.0e9)
+	videoSizeSummary := fmt.Sprintf("%.2f", float64(facts.VideoSize)/1.0e9)
+
+	message := ("Badger 🦡\n\n" + "Examining...\n" + fmt.Sprint(facts.Count) + " media files (" + totalSizeSummary + " gigabytes)\n" +
+		fmt.Sprint(facts.PhotoCount) + " photos (" + photosSizeSummary + " gigabytes)\n" +
+		fmt.Sprint(facts.RawCount) + " raw images (" + rawSizeSummary + " gigabytes)\n" +
+		fmt.Sprint(facts.VideoCount) + " videos (" + videoSizeSummary + " gigabytes)\n\n" +
 		"Badger will group this media into " + fmt.Sprint(clusters.ClusterSize()) + " cluster-folders.\n" +
 		"there will be " + fmt.Sprint(freeAfterMb) + " gigabytes free after copying")
 
@@ -178,7 +182,11 @@ func PromptCopy(clusters *MediaCluster, facts *Facts, opts *BadgerOpts) (bool, e
 
 	_, result, err := prompt.Run()
 	if err != nil {
-		return false, fmt.Errorf("badger: failed to read user prompt: %v", err)
+		if err.Error() == "^C" {
+			return false, nil
+		} else {
+			return false, fmt.Errorf("badger: failed to read user prompt: %v", err)
+		}
 	}
 
 	if result == "yes" {
@@ -189,7 +197,7 @@ func PromptCopy(clusters *MediaCluster, facts *Facts, opts *BadgerOpts) (bool, e
 }
 
 /*
- * Core application
+ * Core application. Cluster media into a new folder
  */
 func Badger(opts *BadgerOpts) int {
 	// list everything that will be targeted
@@ -201,7 +209,7 @@ func Badger(opts *BadgerOpts) int {
 	facts, err := GatherFacts(library)
 	bail(err)
 
-	// cluster
+	// cluster media by time
 	clusters := ClusterMedia(opts.maxSecondsDiff, opts.minPoints, library)
 
 	// prompt whether we want to proceed

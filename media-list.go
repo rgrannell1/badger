@@ -5,18 +5,30 @@ import (
 	"path/filepath"
 )
 
+/*
+ *
+ */
 type MediaList struct {
 	library []*Media
 }
 
+/*
+ *
+ */
 func (media *MediaList) Values() []*Media {
 	return media.library
 }
 
+/*
+ *
+ */
 func (media *MediaList) Size() int {
 	return len(media.library)
 }
 
+/*
+ *
+ */
 func (library *MediaList) GetByPrefix(media *Media) []*Media {
 	prefix := media.GetPrefix()
 
@@ -31,10 +43,16 @@ func (library *MediaList) GetByPrefix(media *Media) []*Media {
 	return matches
 }
 
+/*
+ *
+ */
 func NewMediaList(library []*Media) *MediaList {
 	return &MediaList{library}
 }
 
+/*
+ *
+ */
 func (opts *BadgerOpts) ListMedia() (*MediaList, error) {
 	files, err := filepath.Glob(opts.from)
 

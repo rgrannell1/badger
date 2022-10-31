@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Bundles a value error pair
 type Either[T any] struct {
 	Value T
 	Error error
@@ -17,16 +18,19 @@ type Either[T any] struct {
 /*
  * Get free-space in the target hard-drive
  */
-func GetFreeSpace() (uint64, error) {
+func GetFreeSpace(fpath string) (uint64, error) {
 	var stat unix.Statfs_t
 
-	root := "/home/rg"
-	err := unix.Statfs(root, &stat)
+	err := unix.Statfs(fpath, &stat)
 	bail(err)
 
 	return stat.Bavail * uint64(stat.Bsize), nil
 }
 
+/*
+ * Hash a file
+ *
+ */
 func GetHash(fpath string) (string, error) {
 	file, err := os.Open(fpath)
 	if err != nil {
